@@ -1,0 +1,120 @@
+:root,
+[data-theme='obsidian'] {
+  color-scheme: dark;
+
+  --bg-canvas: #0b0d12;
+  --bg-elevated: #12151e;
+  --surface-1: #161a24;
+  --surface-2: #1e2433;
+  --surface-glass: rgba(22, 26, 36, 0.72);
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.22);
+
+  --text-primary: #f4f1ea;
+  --text-secondary: #c6c1b6;
+  --text-muted: #939aa8;
+
+  --accent-gold: #e3b963;
+  --accent-gold-soft: rgba(227, 185, 99, 0.16);
+
+  --color-wood: #38c988;
+  --color-fire: #ff6b5b;
+  --color-earth: #e8b14a;
+  --color-metal: #cbd5e1;
+  --color-water: #4fa3ff;
+
+  --radius-scale: 1;
+  --radius-card: calc(18px * var(--radius-scale, 1));
+  --radius-pill: calc(9999px * var(--radius-scale, 1));
+  --glass-blur: 16px;
+  --font-scale: 1;
+  --density-pad: 1.25rem;
+  --motion-speed: 1;
+}
+
+[data-theme='hanji'] {
+  color-scheme: light;
+
+  --bg-canvas: #f7f3ea;
+  --bg-elevated: #fffdf8;
+  --surface-1: #ffffff;
+  --surface-2: #efe9dc;
+  --surface-glass: rgba(255, 253, 248, 0.82);
+  --border-subtle: rgba(30, 26, 20, 0.11);
+  --border-strong: rgba(30, 26, 20, 0.24);
+
+  --text-primary: #181612;
+  --text-secondary: #484239;
+  --text-muted: #696154;
+
+  --accent-gold: #966510;
+  --accent-gold-soft: rgba(150, 101, 16, 0.13);
+
+  --color-wood: #177e52;
+  --color-fire: #c93b2b;
+  --color-earth: #9f6710;
+  --color-metal: #4f5968;
+  --color-water: #1e5eb8;
+}
+
+[data-theme='celadon'] {
+  color-scheme: dark;
+
+  --bg-canvas: #0a1413;
+  --bg-elevated: #101e1c;
+  --surface-1: #142624;
+  --surface-2: #1c3330;
+  --surface-glass: rgba(20, 38, 36, 0.74);
+  --border-subtle: rgba(167, 225, 210, 0.12);
+  --border-strong: rgba(167, 225, 210, 0.26);
+
+  --text-primary: #edf6f3;
+  --text-secondary: #b9d4cc;
+  --text-muted: #86aa9f;
+
+  --accent-gold: #dec27a;
+  --accent-gold-soft: rgba(222, 194, 122, 0.16);
+
+  --color-wood: #54d69d;
+  --color-fire: #f87567;
+  --color-earth: #e7ba5a;
+  --color-metal: #d1e0dc;
+  --color-water: #5cb8f2;
+}
+
+[data-theme='dancheong'] {
+  color-scheme: dark;
+
+  --bg-canvas: #120b0f;
+  --bg-elevated: #1b1117;
+  --surface-1: #23161e;
+  --surface-2: #2f1d28;
+  --surface-glass: rgba(35, 22, 30, 0.74);
+  --border-subtle: rgba(247, 212, 168, 0.12);
+  --border-strong: rgba(247, 212, 168, 0.28);
+
+  --text-primary: #faf2ec;
+  --text-secondary: #d9c3b8;
+  --text-muted: #b69a93;
+
+  --accent-gold: #f2b84b;
+  --accent-gold-soft: rgba(242, 184, 75, 0.18);
+
+  --color-wood: #3cd194;
+  --color-fire: #ff6e5c;
+  --color-earth: #f0bc52;
+  --color-metal: #e2d9d5;
+  --color-water: #5cb2ff;
+}
+
+[data-density='compact'] {
+  --density-pad: 0.875rem;
+}
+
+[data-density='comfortable'] {
+  --density-pad: 1.25rem;
+}
+
+[data-density='editorial'] {
+  --density-pad: 1.75rem;
+}

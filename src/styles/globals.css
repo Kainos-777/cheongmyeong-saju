@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+@layer base {
+  html {
+    font-size: calc(16px * var(--font-scale, 1));
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family:
+      'Pretendard Variable',
+      'Pretendard',
+      'Noto Sans KR',
+      -apple-system,
+      BlinkMacSystemFont,
+      system-ui,
+      sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    transition:
+      background-color 0.3s ease,
+      color 0.25s ease;
+  }
+
+  ::selection {
+    background-color: var(--accent-gold-soft);
+    color: var(--text-primary);
+  }
+}
+
+.font-serif-kr {
+  font-family: 'Noto Serif KR', 'Pretendard Variable', serif;
+}
+
+.font-mono-spec {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+.surface-glass {
+  background-color: var(--surface-glass);
+  backdrop-filter: blur(var(--glass-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 16px));
+  border: 1px solid var(--border-subtle);
+}
+
+/* Subtle custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

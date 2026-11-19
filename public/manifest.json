@@ -1,0 +1,19 @@
+{
+  "name": "청명 (淸明) — 사주 명리 & 모션 UX/UI 스튜디오",
+  "short_name": "청명 淸明",
+  "description": "정밀 천문 만세력 기반 사주팔자 분석 및 UX/UI 디자인·모션 스튜디오 PWA",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
