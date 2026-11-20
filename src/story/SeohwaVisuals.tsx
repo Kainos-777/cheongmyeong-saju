@@ -1,5 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { motion } from 'framer-motion';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
+import { motion, useMotionValue, useSpring } from 'framer-motion';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import type { ElementKey } from '../types/saju';
 import type { SeohwaExpression } from './storyCore';
@@ -16,6 +23,7 @@ export interface SeohwaPortraitProps {
   expression: SeohwaExpression;
   size?: 'hero' | 'stage' | 'card' | 'compact';
   dominantElement?: ElementKey;
+  isSpeaking?: boolean;
   className?: string;
 }
 
@@ -26,448 +34,355 @@ const SIZE_CLASSES: Record<NonNullable<SeohwaPortraitProps['size']>, string> = {
   compact: 'h-24 w-20 shrink-0',
 };
 
+type PortraitMediaMode = 'video' | 'image' | 'fallback';
+
+const VIGNETTE_MASK_STYLE: CSSProperties = {
+  WebkitMaskImage:
+    'radial-gradient(ellipse 68% 72% at 50% 44%, black 52%, transparent 96%)',
+  maskImage:
+    'radial-gradient(ellipse 68% 72% at 50% 44%, black 52%, transparent 96%)',
+};
+
+function SeohwaCelestialFallback({
+  expression,
+  auraColor,
+}: {
+  expression: SeohwaExpression;
+  auraColor: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 320 380"
+      className="h-full w-full overflow-visible"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="seohwaFallbackHair" x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0%" stopColor="#232842" />
+          <stop offset="55%" stopColor="#121628" />
+          <stop offset="100%" stopColor="#080a12" />
+        </linearGradient>
+        <linearGradient id="seohwaFallbackHanbok" x1="0" y1="0" x2="0.8" y2="1">
+          <stop offset="0%" stopColor="#1c2442" />
+          <stop offset="60%" stopColor="#11162a" />
+          <stop offset="100%" stopColor="#070912" />
+        </linearGradient>
+        <linearGradient id="seohwaFallbackGold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#f6df9d" />
+          <stop offset="55%" stopColor="#e5be6d" />
+          <stop offset="100%" stopColor="#a7792b" />
+        </linearGradient>
+      </defs>
+      {/* Crescent halo */}
+      <path
+        d="M196 50 A56 56 0 1 0 226 142 A46 46 0 1 1 196 50 Z"
+        fill="url(#seohwaFallbackGold)"
+        opacity="0.32"
+      />
+      {/* Hair silhouette + binyeo */}
+      <path
+        d="M96 120 C76 164 70 236 68 336 L252 336 C250 236 244 164 224 120 C214 78 190 54 160 54 C130 54 106 78 96 120 Z"
+        fill="url(#seohwaFallbackHair)"
+      />
+      <ellipse cx="160" cy="64" rx="26" ry="18" fill="#171b2d" />
+      <line
+        x1="100"
+        y1="60"
+        x2="224"
+        y2="52"
+        stroke="url(#seohwaFallbackGold)"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <circle cx="226" cy="52" r="6.5" fill="url(#seohwaFallbackGold)" />
+      {/* Celestial face & shoulders silhouette */}
+      <path
+        d="M120 120 C120 88 200 88 200 120 C200 156 186 188 160 194 C134 188 120 156 120 120 Z"
+        fill="#f2d6c4"
+        opacity="0.9"
+      />
+      <path
+        d="M58 364 C64 286 82 238 122 222 L160 236 L198 222 C238 238 256 286 262 364 Z"
+        fill="url(#seohwaFallbackHanbok)"
+      />
+      <path
+        d="M126 222 L158 274 L194 222"
+        fill="none"
+        stroke="url(#seohwaFallbackGold)"
+        strokeWidth="2"
+      />
+      {/* Expression glyph */}
+      <circle
+        cx="160"
+        cy="108"
+        r="3.2"
+        fill={expression === 'focus' ? auraColor : '#e5be6d'}
+      />
+    </svg>
+  );
+}
+
 export function SeohwaPortrait({
   expression,
   size = 'stage',
   dominantElement = 'earth',
+  isSpeaking = false,
   className = '',
 }: SeohwaPortraitProps) {
   const auraColor = ELEMENT_HALO[dominantElement] ?? '#e5be6d';
-  const [blinking, setBlinking] = useState(false);
+  const [mediaMode, setMediaMode] = useState<PortraitMediaMode>('video');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const isCompact = size === 'compact';
+
+  const rawRotateX = useMotionValue(0);
+  const rawRotateY = useMotionValue(0);
+  const rawShiftX = useMotionValue(0);
+  const rawShiftY = useMotionValue(0);
+
+  const rotateX = useSpring(rawRotateX, { stiffness: 180, damping: 22 });
+  const rotateY = useSpring(rawRotateY, { stiffness: 180, damping: 22 });
+  const shiftX = useSpring(rawShiftX, { stiffness: 180, damping: 22 });
+  const shiftY = useSpring(rawShiftY, { stiffness: 180, damping: 22 });
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      setBlinking(true);
-      window.setTimeout(() => setBlinking(false), 150);
-    }, 4400);
-    return () => window.clearInterval(id);
-  }, []);
+    setMediaMode('video');
+  }, [expression]);
 
-  const isSmirk = expression === 'smirk';
-  const isWarm = expression === 'warm';
-  const isFocus = expression === 'focus';
+  useEffect(() => {
+    if (mediaMode !== 'video') return;
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      const playPromise = video.play?.();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          // Ignore autoplay promise rejections cleanly; poster remains visible
+        });
+      }
+    } catch {
+      // Ignore play errors in restricted/jsdom environments
+    }
+  }, [expression, mediaMode]);
+
+  const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (isCompact || e.pointerType === 'touch') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const nx = (e.clientX - rect.left) / rect.width - 0.5;
+    const ny = (e.clientY - rect.top) / rect.height - 0.5;
+    rawRotateX.set(-ny * 8);
+    rawRotateY.set(nx * 10);
+    rawShiftX.set(nx * 8);
+    rawShiftY.set(ny * 6);
+  };
+
+  const handlePointerLeave = () => {
+    rawRotateX.set(0);
+    rawRotateY.set(0);
+    rawShiftX.set(0);
+    rawShiftY.set(0);
+  };
+
+  const videoSrc = `/character/seohwa-${expression}.mp4`;
+  const imageSrc = `/character/seohwa-${expression}.png`;
 
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.96, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
       className={`relative flex items-center justify-center select-none ${SIZE_CLASSES[size]} ${className}`}
-      aria-label={`동양풍 여도사 서화 캐릭터 일러스트 (${expression})`}
+      style={{ perspective: 900 }}
+      aria-label={`동양풍 여도사 서화 라이브 초상 (${expression})`}
       data-expression={expression}
+      data-speaking={isSpeaking ? 'true' : 'false'}
     >
-      {/* Soft Midnight & Element Glow */}
-      <div
+      {/* Ambient Midnight & Dominant Element Aura */}
+      <motion.div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-full blur-3xl opacity-30 transition-colors duration-700"
+        className="pointer-events-none absolute -inset-3 rounded-full blur-3xl transition-colors duration-700"
+        animate={
+          isSpeaking
+            ? { opacity: [0.38, 0.68, 0.38], scale: [0.97, 1.06, 0.97] }
+            : { opacity: 0.28, scale: 1 }
+        }
+        transition={
+          isSpeaking
+            ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+            : { duration: 0.4 }
+        }
         style={{
-          background: `radial-gradient(circle at 50% 38%, ${auraColor} 0%, rgba(229,190,109,0.22) 40%, transparent 72%)`,
+          background: `radial-gradient(circle at 50% 42%, rgba(229,190,109,0.34) 0%, ${auraColor} 36%, transparent 72%)`,
         }}
       />
 
-      {/* Rotating Celestial Astrolabe Halo */}
-      <motion.svg
-        viewBox="0 0 320 380"
-        className="relative z-10 h-full w-full overflow-visible drop-shadow-[0_18px_34px_rgba(0,0,0,0.65)]"
-        animate={size === 'compact' ? undefined : { y: [0, -4, 0] }}
-        transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <defs>
-          <linearGradient id="seohwaBgVignette" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0e1222" stopOpacity="0.9" />
-            <stop offset="70%" stopColor="#07080d" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#07080d" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="seohwaHairGrad" x1="0" y1="0" x2="0.4" y2="1">
-            <stop offset="0%" stopColor="#21263d" />
-            <stop offset="45%" stopColor="#111423" />
-            <stop offset="100%" stopColor="#090b12" />
-          </linearGradient>
-          <linearGradient id="seohwaSkinGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#fae7d8" />
-            <stop offset="72%" stopColor="#f0d1be" />
-            <stop offset="100%" stopColor="#dfb59e" />
-          </linearGradient>
-          <linearGradient id="seohwaHanbokGrad" x1="0" y1="0" x2="0.8" y2="1">
-            <stop offset="0%" stopColor="#1b2340" />
-            <stop offset="55%" stopColor="#12172b" />
-            <stop offset="100%" stopColor="#090c18" />
-          </linearGradient>
-          <linearGradient id="seohwaGoldGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#f6df9d" />
-            <stop offset="50%" stopColor="#e5be6d" />
-            <stop offset="100%" stopColor="#b08232" />
-          </linearGradient>
-          <linearGradient id="seohwaFanGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#1e2747" />
-            <stop offset="100%" stopColor="#0d1223" />
-          </linearGradient>
-          <radialGradient id="seohwaLanternGlow" cx="50%" cy="85%" r="50%">
-            <stop offset="0%" stopColor="#f5c96b" stopOpacity="0.48" />
-            <stop offset="100%" stopColor="#f5c96b" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="seohwaAlphaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
-            <stop offset="72%" stopColor="#ffffff" stopOpacity="1" />
-            <stop offset="95%" stopColor="#ffffff" stopOpacity="0" />
-            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-          </linearGradient>
-          <mask id="seohwaFadeMask">
-            <rect x="0" y="0" width="320" height="380" fill="url(#seohwaAlphaGrad)" />
-          </mask>
-        </defs>
+      {/* Luminous Pulsing Golden Speaking Aura Ring */}
+      {isSpeaking && (
+        <>
+          <motion.div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-1 rounded-[46%]"
+            animate={{
+              scale: [0.98, 1.04, 0.98],
+              opacity: [0.55, 0.95, 0.55],
+            }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              border: '1.5px solid rgba(229, 190, 109, 0.78)',
+              boxShadow:
+                '0 0 32px rgba(229, 190, 109, 0.45), inset 0 0 22px rgba(229, 190, 109, 0.2)',
+            }}
+          />
+          {!isCompact && (
+            <motion.div
+              aria-hidden="true"
+              className="pointer-events-none absolute -inset-1 rounded-[48%]"
+              animate={{
+                scale: [1, 1.11],
+                opacity: [0.48, 0],
+              }}
+              transition={{ duration: 1.9, repeat: Infinity, ease: 'easeOut' }}
+              style={{
+                border: '1px solid rgba(229, 190, 109, 0.55)',
+              }}
+            />
+          )}
+        </>
+      )}
 
-        {/* Outer Sacred Geometry Halo Rings */}
-        <motion.g
-          style={{ transformOrigin: '160px 146px' }}
+      {/* Subtle Rotating Celestial Astrolabe Ring Behind Portrait */}
+      {!isCompact && (
+        <motion.svg
+          aria-hidden="true"
+          viewBox="0 0 320 380"
+          className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
           animate={{ rotate: 360 }}
-          transition={{ duration: 54, repeat: Infinity, ease: 'linear' }}
-          opacity={0.72}
+          transition={{ duration: 64, repeat: Infinity, ease: 'linear' }}
+          style={{ opacity: isSpeaking ? 0.85 : 0.45 }}
         >
           <circle
             cx="160"
-            cy="146"
-            r="118"
+            cy="158"
+            r="128"
             fill="none"
-            stroke="url(#seohwaGoldGrad)"
-            strokeOpacity="0.38"
-            strokeWidth="1.1"
-            strokeDasharray="6 7"
+            stroke="#e5be6d"
+            strokeOpacity="0.34"
+            strokeWidth="1"
+            strokeDasharray="5 8"
           />
           <circle
             cx="160"
-            cy="146"
-            r="102"
+            cy="158"
+            r="112"
             fill="none"
             stroke={auraColor}
-            strokeOpacity="0.28"
-            strokeWidth="1"
+            strokeOpacity="0.24"
+            strokeWidth="0.9"
           />
-          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
-            <circle
-              key={deg}
-              cx={160 + 118 * Math.cos((deg * Math.PI) / 180)}
-              cy={146 + 118 * Math.sin((deg * Math.PI) / 180)}
-              r={deg % 90 === 0 ? 3 : 1.7}
-              fill="#e5be6d"
-              opacity={0.8}
-            />
-          ))}
-        </motion.g>
+        </motion.svg>
+      )}
 
-        {/* Crescent Moon Behind Head */}
-        <path
-          d="M196 52 A56 56 0 1 0 226 144 A46 46 0 1 1 196 52 Z"
-          fill="url(#seohwaGoldGrad)"
-          opacity="0.24"
-        />
-
-        {/* Character Layer */}
-        <g mask="url(#seohwaFadeMask)">
-          {/* Back Flowing Hair Silhouette */}
-          <path
-            d="M94 118 C72 162 66 238 64 345 L256 345 C254 238 248 162 226 118 C216 74 192 50 160 50 C128 50 104 74 94 118 Z"
-            fill="url(#seohwaHairGrad)"
-          />
-
-          {/* Traditional Hair Updo Bun + Crescent Binyeo Hairpin */}
-          <ellipse cx="160" cy="60" rx="28" ry="20" fill="#171b2d" />
-          <line
-            x1="96"
-            y1="56"
-            x2="226"
-            y2="48"
-            stroke="url(#seohwaGoldGrad)"
-            strokeWidth="3.2"
-            strokeLinecap="round"
-          />
-          <circle cx="228" cy="48" r="7" fill="url(#seohwaGoldGrad)" />
-          <path
-            d="M227 55 Q234 74 228 92"
-            stroke="#e5be6d"
-            strokeWidth="1.6"
-            fill="none"
-            opacity="0.85"
-          />
-          <circle cx="228" cy="95" r="3.2" fill="#f7e4ad" />
-
-          {/* Hanbok Shoulders & Sleeves */}
-          <path
-            d="M52 372 C56 290 76 238 118 222 L160 236 L202 222 C244 238 264 290 268 372 Z"
-            fill="url(#seohwaHanbokGrad)"
-          />
-          {/* Gold Constellation Shoulder Embroidery */}
-          <path
-            d="M84 270 Q106 258 122 276 M236 270 Q214 258 198 276"
-            stroke="url(#seohwaGoldGrad)"
-            strokeWidth="1.3"
-            strokeDasharray="2 4"
-            fill="none"
-            opacity="0.65"
-          />
-          <circle cx="94" cy="288" r="2" fill="#e5be6d" opacity="0.7" />
-          <circle cx="226" cy="288" r="2" fill="#e5be6d" opacity="0.7" />
-
-          {/* Neck & Clavicle Shadow */}
-          <path
-            d="M144 180 L144 232 C144 244 176 244 176 232 L176 180 Z"
-            fill="url(#seohwaSkinGrad)"
-          />
-          <path
-            d="M144 185 Q160 202 176 185 L176 202 Q160 212 144 202 Z"
-            fill="#cfa089"
-            opacity="0.45"
-          />
-
-          {/* Hanbok Overlapping Lapel (깃 & 동정) */}
-          <path
-            d="M118 222 L156 286 L202 222 L214 230 L162 308 L106 230 Z"
-            fill="#141a32"
-            stroke="url(#seohwaGoldGrad)"
-            strokeWidth="1.6"
-          />
-          {/* Crisp White Dongjeong Collar */}
-          <path
-            d="M126 220 L158 272 L194 220 L186 216 L158 258 L134 216 Z"
-            fill="#f5efe3"
-            opacity="0.96"
-          />
-          {/* Flowing Gold Goreum Ribbon Tie */}
-          <path
-            d="M168 272 C190 268 206 278 202 292 C196 300 176 292 168 282 Z"
-            fill="url(#seohwaGoldGrad)"
-          />
-          <path
-            d="M168 278 Q174 328 164 368"
-            stroke="url(#seohwaGoldGrad)"
-            strokeWidth="6"
-            strokeLinecap="round"
-            fill="none"
-            opacity="0.92"
-          />
-
-          {/* Face Contour */}
-          <path
-            d="M118 118 C118 86 202 86 202 118 C202 154 188 188 160 194 C132 188 118 154 118 118 Z"
-            fill="url(#seohwaSkinGrad)"
-          />
-
-          {/* Soft Cheek Glow */}
-          <ellipse
-            cx="132"
-            cy="152"
-            rx="10"
-            ry="5"
-            fill="#e57a70"
-            opacity={isWarm ? 0.34 : 0.18}
-          />
-          <ellipse
-            cx="188"
-            cy="152"
-            rx="10"
-            ry="5"
-            fill="#e57a70"
-            opacity={isWarm ? 0.34 : 0.18}
-          />
-
-          {/* Eyes */}
-          <motion.g
-            style={{ transformOrigin: '160px 136px' }}
-            animate={
-              blinking
-                ? { scaleY: 0.1 }
-                : { scaleY: 1 }
-            }
-            transition={{ duration: 0.1 }}
-          >
-            {isWarm ? (
-              <>
-                <path
-                  d="M129 138 Q138 130 147 138"
-                  fill="none"
-                  stroke="#181826"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M173 138 Q182 130 191 138"
-                  fill="none"
-                  stroke="#181826"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-              </>
-            ) : (
-              <>
-                {/* Left Eye */}
-                <ellipse cx="138" cy="136" rx="9" ry="6.2" fill="#fcfaf7" />
-                <circle cx="139" cy="136" r="5" fill="#c28b37" />
-                <circle cx="139" cy="136" r="2.7" fill="#17141d" />
-                <circle cx="137" cy="134" r="1.5" fill="#ffffff" />
-                <path
-                  d="M127 134 Q138 127 149 135"
-                  fill="none"
-                  stroke="#141522"
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                />
-                {/* Right Eye */}
-                <ellipse cx="182" cy="136" rx="9" ry="6.2" fill="#fcfaf7" />
-                <circle cx="181" cy="136" r="5" fill="#c28b37" />
-                <circle cx="181" cy="136" r="2.7" fill="#17141d" />
-                <circle cx="179" cy="134" r="1.5" fill="#ffffff" />
-                <path
-                  d="M171 135 Q182 127 193 134"
-                  fill="none"
-                  stroke="#141522"
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                />
-              </>
-            )}
-          </motion.g>
-
-          {/* Eyebrows (expression-sensitive!) */}
-          <path
-            d={
-              isSmirk
-                ? 'M127 123 Q138 119 148 123'
-                : isFocus
-                  ? 'M127 124 Q138 121 148 125'
-                  : 'M127 124 Q138 120 148 124'
-            }
-            fill="none"
-            stroke="#1b1f33"
-            strokeWidth="2.1"
-            strokeLinecap="round"
-          />
-          <path
-            d={
-              isSmirk
-                ? 'M172 121 Q182 115 193 121'
-                : isFocus
-                  ? 'M172 125 Q182 121 193 124'
-                  : 'M172 124 Q182 120 193 124'
-            }
-            fill="none"
-            stroke="#1b1f33"
-            strokeWidth="2.1"
-            strokeLinecap="round"
-          />
-
-          {/* Delicate Nose & Lips */}
-          <path
-            d="M159 144 Q157 154 160 156"
-            fill="none"
-            stroke="#c7957e"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-          <path
-            d={
-              isWarm
-                ? 'M151 169 Q160 177 169 169'
-                : isSmirk
-                  ? 'M152 170 Q162 174 170 166'
-                  : isFocus
-                    ? 'M154 171 Q160 172 166 171'
-                    : 'M153 170 Q160 173 167 170'
-            }
-            fill="none"
-            stroke="#b8565b"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
-
-          {/* Forehead Subtle Gold Moon Mark (Mystic Accent) */}
-          <path
-            d="M160 105 A4.5 4.5 0 1 0 164 111 A3.6 3.6 0 1 1 160 105 Z"
-            fill="#e5be6d"
-            opacity="0.88"
-          />
-
-          {/* Front Framing Hair Strands */}
-          <path
-            d="M160 66 C130 68 112 90 112 124 C108 175 104 232 94 295 C108 265 114 218 118 176 C120 138 124 108 148 92 C142 104 139 114 140 120 C148 104 156 96 164 90 C172 100 182 112 192 124 C194 112 190 100 184 92 C196 108 200 138 202 176 C206 218 212 265 226 295 C216 232 212 175 208 124 C208 90 190 68 160 66 Z"
-            fill="url(#seohwaHairGrad)"
-          />
-
-          {/* Expression-Specific Props */}
-          {isSmirk && (
-            <motion.g
-              initial={{ opacity: 0, rotate: -10, y: 12 }}
-              animate={{ opacity: 1, rotate: 0, y: 0 }}
-              transition={{ type: 'spring', stiffness: 220, damping: 20 }}
-              style={{ transformOrigin: '205px 265px' }}
-            >
-              {/* Folding East-Asian Paper Fan near lower right chin */}
-              <path
-                d="M206 254 L148 190 A78 78 0 0 1 258 196 Z"
-                fill="url(#seohwaFanGrad)"
-                stroke="url(#seohwaGoldGrad)"
-                strokeWidth="2"
-              />
-              <line x1="206" y1="254" x2="174" y2="178" stroke="#e5be6d" strokeOpacity="0.45" strokeWidth="1" />
-              <line x1="206" y1="254" x2="206" y2="172" stroke="#e5be6d" strokeOpacity="0.45" strokeWidth="1" />
-              <line x1="206" y1="254" x2="234" y2="182" stroke="#e5be6d" strokeOpacity="0.45" strokeWidth="1" />
-              <circle cx="206" cy="254" r="4" fill="#e5be6d" />
-            </motion.g>
-          )}
-
-          {isFocus && (
-            <motion.g
-              animate={{ opacity: [0.55, 1, 0.55] }}
-              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-            >
-              {/* Glowing Constellation Fate Threads */}
-              <path
-                d="M72 238 Q128 208 160 232 T248 210"
-                fill="none"
-                stroke="#e5be6d"
-                strokeWidth="1.6"
-                strokeDasharray="4 4"
-              />
-              <circle cx="112" cy="222" r="3.5" fill="#f8e3a8" />
-              <circle cx="160" cy="232" r="4.5" fill={auraColor} />
-              <circle cx="212" cy="218" r="3.5" fill="#f8e3a8" />
-            </motion.g>
-          )}
-
-          {isWarm && (
-            <rect
-              x="20"
-              y="210"
-              width="280"
-              height="160"
-              fill="url(#seohwaLanternGlow)"
+      {/* 3D Parallax + Vignette-Masked Photorealistic Living Portrait */}
+      <motion.div
+        className="relative z-10 h-full w-full"
+        style={{
+          rotateX: isCompact ? 0 : rotateX,
+          rotateY: isCompact ? 0 : rotateY,
+          x: isCompact ? 0 : shiftX,
+          y: isCompact ? 0 : shiftY,
+          transformStyle: 'preserve-3d',
+        }}
+      >
+        <motion.div
+          className="h-full w-full overflow-hidden rounded-[36%]"
+          style={VIGNETTE_MASK_STYLE}
+          animate={isCompact ? undefined : { y: [0, -3, 0] }}
+          transition={
+            isCompact
+              ? undefined
+              : { duration: 4.8, repeat: Infinity, ease: 'easeInOut' }
+          }
+        >
+          {mediaMode === 'video' && (
+            <video
+              key={`video-${expression}`}
+              ref={videoRef}
+              src={videoSrc}
+              poster={imageSrc}
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              onError={() => setMediaMode('image')}
+              className="h-full w-full object-cover object-top"
+              aria-label={`서화 라이브 초상 영상 (${expression})`}
             />
           )}
-        </g>
 
-        {/* Floating Stardust Particles */}
-        {[
-          { cx: 64, cy: 112, r: 2.2, delay: 0 },
-          { cx: 256, cy: 126, r: 2.5, delay: 0.9 },
-          { cx: 88, cy: 204, r: 1.8, delay: 1.7 },
-          { cx: 248, cy: 238, r: 2.0, delay: 0.5 },
-        ].map((dot, idx) => (
-          <motion.circle
-            key={idx}
-            cx={dot.cx}
-            cy={dot.cy}
-            r={dot.r}
-            fill={idx % 2 === 0 ? '#e5be6d' : auraColor}
-            animate={{ opacity: [0.25, 0.95, 0.25], y: [0, -6, 0] }}
-            transition={{
-              duration: 3.4,
-              delay: dot.delay,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-          />
-        ))}
-      </motion.svg>
+          {mediaMode === 'image' && (
+            <img
+              key={`img-${expression}`}
+              src={imageSrc}
+              alt={`서화 초상 일러스트 (${expression})`}
+              onError={() => setMediaMode('fallback')}
+              className="h-full w-full object-cover object-top"
+            />
+          )}
+
+          {mediaMode === 'fallback' && (
+            <div className="flex h-full w-full items-center justify-center bg-[#07080d]/60">
+              <SeohwaCelestialFallback
+                expression={expression}
+                auraColor={auraColor}
+              />
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
     </motion.div>
+  );
+}
+
+// ============================================================================
+// Golden 4-Bar Audio Equalizer Indicator
+// ============================================================================
+
+function GoldenEqualizerBars() {
+  const bars = [
+    { delay: 0, min: 0.35, max: 1 },
+    { delay: 0.14, min: 0.5, max: 0.9 },
+    { delay: 0.28, min: 0.3, max: 1 },
+    { delay: 0.1, min: 0.45, max: 0.85 },
+  ];
+
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-3.5 items-end gap-[2px]"
+    >
+      {bars.map((bar, idx) => (
+        <motion.span
+          key={idx}
+          className="block w-[2.5px] rounded-full"
+          style={{
+            height: '12px',
+            backgroundColor: 'var(--accent-gold)',
+            transformOrigin: 'bottom',
+          }}
+          animate={{ scaleY: [bar.min, bar.max, bar.min] }}
+          transition={{
+            duration: 0.65,
+            delay: bar.delay,
+            repeat: Infinity,
+            ease: 'easeInOut',
+          }}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -485,6 +400,8 @@ export interface SeohwaDialogueCardProps {
   onAdvance?: () => void;
   dominantElement?: ElementKey;
   showPortrait?: boolean;
+  isSpeaking?: boolean;
+  onToggleSpeak?: () => void;
   children?: ReactNode;
   className?: string;
 }
@@ -499,6 +416,8 @@ export function SeohwaDialogueCard({
   onAdvance,
   dominantElement = 'earth',
   showPortrait = true,
+  isSpeaking = false,
+  onToggleSpeak,
   children,
   className = '',
 }: SeohwaDialogueCardProps) {
@@ -555,19 +474,21 @@ export function SeohwaDialogueCard({
             }
           : undefined
       }
-      className={`relative overflow-hidden rounded-[22px] border p-4 shadow-2xl sm:p-5 ${
+      className={`relative overflow-hidden rounded-[22px] border p-4 shadow-2xl transition-colors sm:p-5 ${
         onAdvance ? 'cursor-pointer' : ''
       } ${className}`}
       style={{
         backgroundColor: 'var(--surface-glass)',
         backdropFilter: 'blur(18px)',
         WebkitBackdropFilter: 'blur(18px)',
-        borderColor: 'rgba(229, 190, 109, 0.28)',
+        borderColor: isSpeaking
+          ? 'rgba(229, 190, 109, 0.52)'
+          : 'rgba(229, 190, 109, 0.28)',
       }}
     >
-      {/* Top Speaker Tag */}
+      {/* Top Speaker Tag + Voice Trigger + Continue Cue */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold tracking-wide"
             style={{
@@ -590,17 +511,57 @@ export function SeohwaDialogueCard({
           </span>
         </div>
 
-        {showContinueCue && !isTyping && (
-          <motion.span
-            animate={{ opacity: [0.45, 1, 0.45], y: [0, 2, 0] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            className="inline-flex items-center gap-1 text-xs font-semibold"
-            style={{ color: 'var(--accent-gold)' }}
-          >
-            눌러서 계속
-            <ChevronDown className="h-3.5 w-3.5" />
-          </motion.span>
-        )}
+        <div className="flex items-center gap-2">
+          {onToggleSpeak && (
+            <button
+              type="button"
+              aria-label="서화 대사 음성 재생/정지"
+              aria-pressed={Boolean(isSpeaking)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSpeak();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                }
+              }}
+              className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-all hover:opacity-95"
+              style={{
+                backgroundColor: isSpeaking
+                  ? 'rgba(229, 190, 109, 0.2)'
+                  : 'var(--surface-1)',
+                borderColor: isSpeaking
+                  ? 'rgba(229, 190, 109, 0.65)'
+                  : 'var(--border-subtle)',
+                color: isSpeaking
+                  ? 'var(--accent-gold)'
+                  : 'var(--text-secondary)',
+              }}
+            >
+              {isSpeaking ? (
+                <>
+                  <GoldenEqualizerBars />
+                  <span>⏹ 멈춤</span>
+                </>
+              ) : (
+                <span>🔊 듣기</span>
+              )}
+            </button>
+          )}
+
+          {showContinueCue && !isTyping && (
+            <motion.span
+              animate={{ opacity: [0.45, 1, 0.45], y: [0, 2, 0] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="inline-flex items-center gap-1 text-xs font-semibold"
+              style={{ color: 'var(--accent-gold)' }}
+            >
+              눌러서 계속
+              <ChevronDown className="h-3.5 w-3.5" />
+            </motion.span>
+          )}
+        </div>
       </div>
 
       <div className="flex items-start gap-3.5 sm:gap-4">
@@ -609,6 +570,7 @@ export function SeohwaDialogueCard({
             expression={expression}
             size="compact"
             dominantElement={dominantElement}
+            isSpeaking={isSpeaking}
             className="hidden sm:flex"
           />
         )}

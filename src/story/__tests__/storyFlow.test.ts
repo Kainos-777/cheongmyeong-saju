@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { PRESET_PROFILES, calculateSaju } from '../../engine';
+import { PRESET_PROFILES, calculateCompatibility, calculateSaju } from '../../engine';
 import {
+  FOCUS_TOPIC_META,
+  INTRO_BEATS,
+  SAJU_PLAIN_GLOSSARY,
   buildChapterScripts,
+  buildCompatibilityQuote,
   buildSeohwaRoasts,
   buildShareUrl,
   decodeSharePayload,
   encodeSharePayload,
   generateViralStoryCardSvg,
 } from '../storyCore';
+import voiceLines from '../voiceLines.json';
 import type { BirthInput } from '../../types/saju';
 
 describe('Story Renewal Core (Share Codec, Seohwa Script, 9:16 Card)', () => {
@@ -115,5 +120,66 @@ describe('Story Renewal Core (Share Codec, Seohwa Script, 9:16 Card)', () => {
     expect(svg).toContain(saju.pillars.day.stem.hanja);
     expect(svg).toContain(saju.pillars.day.branch.hanja);
     expect(svg).toContain('청명각');
+  });
+
+  it('provides all 12 non-empty voiceLines keys aligned with INTRO_BEATS & FOCUS_TOPIC_META', () => {
+    const expectedKeys = [
+      'landing-tease',
+      'beat-1',
+      'beat-2',
+      'beat-3',
+      'beat-4',
+      'reply-love',
+      'reply-wealth',
+      'reply-roast',
+      'reply-luck',
+      'input-1',
+      'input-2',
+      'ritual-1',
+    ] as const;
+
+    expect(Object.keys(voiceLines).sort()).toEqual([...expectedKeys].sort());
+    for (const key of expectedKeys) {
+      expect(typeof voiceLines[key]).toBe('string');
+      expect(voiceLines[key].trim().length).toBeGreaterThan(10);
+    }
+
+    expect(INTRO_BEATS).toHaveLength(4);
+    INTRO_BEATS.forEach((beat, idx) => {
+      const expectedKey = `beat-${idx + 1}` as keyof typeof voiceLines;
+      expect(beat.voiceKey).toBe(expectedKey);
+      expect(beat.text).toBe(voiceLines[expectedKey]);
+    });
+
+    (['love', 'wealth', 'roast', 'luck'] as const).forEach((topic) => {
+      const expectedKey = `reply-${topic}` as keyof typeof voiceLines;
+      expect(FOCUS_TOPIC_META[topic].voiceKey).toBe(expectedKey);
+      expect(FOCUS_TOPIC_META[topic].seohwaReply).toBe(voiceLines[expectedKey]);
+    });
+  });
+
+  it('exports >= 8 beginner-friendly SAJU_PLAIN_GLOSSARY entries and 5 chapter cliffhanger secrets', () => {
+    expect(SAJU_PLAIN_GLOSSARY.length).toBeGreaterThanOrEqual(8);
+    SAJU_PLAIN_GLOSSARY.forEach((entry) => {
+      expect(entry.id.trim().length).toBeGreaterThan(0);
+      expect(entry.term.trim().length).toBeGreaterThan(0);
+      expect(entry.hanja.trim().length).toBeGreaterThan(0);
+      expect(entry.plainTitle.trim().length).toBeGreaterThan(4);
+      expect(entry.easyDesc.trim().length).toBeGreaterThan(15);
+    });
+
+    const personA = calculateSaju(PRESET_PROFILES[0]);
+    const personB = calculateSaju(PRESET_PROFILES[1]);
+    const { chapters } = buildChapterScripts(personA, 'love');
+    expect(chapters).toHaveLength(5);
+    chapters.forEach((ch) => {
+      expect(ch.secretTease.trim().length).toBeGreaterThan(10);
+      expect(ch.secretReveal.trim().length).toBeGreaterThan(20);
+    });
+
+    const compat = calculateCompatibility(personA, personB);
+    const quote = buildCompatibilityQuote(compat);
+    expect(quote).toContain(String(compat.overallScore));
+    expect(quote.length).toBeGreaterThan(20);
   });
 });

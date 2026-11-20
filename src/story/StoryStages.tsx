@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react';
+import { useMediaAudio } from '../audio/mediaAudioEngine';
 import { BIRTH_CITIES, PRESET_PROFILES } from '../engine';
 import { KineticTypography, YinYangLoader } from '../motion';
 import type {
@@ -25,8 +26,8 @@ import {
   FOCUS_TOPIC_META,
   INTRO_BEATS,
   type FocusTopic,
-  soundEngine,
 } from './storyCore';
+import voiceLines from './voiceLines.json';
 
 // ============================================================================
 // 1. Landing Stage
@@ -45,13 +46,45 @@ export function LandingStage({
   onResumeSaved,
   savedProfileName,
 }: LandingStageProps) {
+  const {
+    isSpeaking,
+    enableExperienceAudio,
+    speakClipOrText,
+    stopVoice,
+    playTap,
+    playChime,
+  } = useMediaAudio();
+
+  useEffect(() => {
+    return () => {
+      stopVoice();
+    };
+  }, [stopVoice]);
+
+  const handleToggleTeaseVoice = () => {
+    if (isSpeaking) {
+      stopVoice();
+      return;
+    }
+    speakClipOrText({
+      voiceKey: 'landing-tease',
+      text: voiceLines['landing-tease'],
+      force: true,
+    });
+  };
+
   return (
     <section
       aria-label="청명각 오프닝"
       className="mx-auto flex min-h-[calc(100dvh-76px)] w-full max-w-4xl flex-col items-center justify-center px-4 py-6 text-center"
     >
-      {/* Hero Portrait */}
-      <SeohwaPortrait expression="mystic" size="hero" dominantElement="earth" />
+      {/* Hero Living Portrait */}
+      <SeohwaPortrait
+        expression="mystic"
+        size="hero"
+        dominantElement="earth"
+        isSpeaking={isSpeaking}
+      />
 
       {/* Title & Hook */}
       <div className="mt-2 max-w-2xl space-y-3">
@@ -91,16 +124,49 @@ export function LandingStage({
           정통 천문 만세력으로 풀어주는 촌철살인 기질 팩폭, 3D 사주·오행,
           대운과 궁합 이야기.
         </p>
+
+        {/* Subtle Audio Experience Preview Badge */}
+        <div className="flex justify-center pt-0.5">
+          <button
+            type="button"
+            onClick={handleToggleTeaseVoice}
+            aria-label="서화 오프닝 보이스 미리 듣기"
+            aria-pressed={isSpeaking}
+            className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors hover:opacity-95"
+            style={{
+              backgroundColor: isSpeaking
+                ? 'rgba(229, 190, 109, 0.16)'
+                : 'rgba(19, 23, 36, 0.72)',
+              borderColor: isSpeaking
+                ? 'rgba(229, 190, 109, 0.52)'
+                : 'rgba(255, 255, 255, 0.12)',
+              color: isSpeaking ? 'var(--accent-gold)' : 'var(--text-secondary)',
+            }}
+          >
+            <span>🎵 국악 BGM · 🎙️ 서화 보이스 지원</span>
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+              style={{
+                backgroundColor: 'rgba(229, 190, 109, 0.14)',
+                color: 'var(--accent-gold)',
+              }}
+            >
+              {isSpeaking ? '⏹ 멈춤' : '미리듣기'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Primary CTAs */}
-      <div className="mt-7 flex w-full max-w-md flex-col items-center gap-3">
+      <div className="mt-6 flex w-full max-w-md flex-col items-center gap-3">
         <motion.button
           type="button"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => {
-            soundEngine.playChime();
+            stopVoice();
+            enableExperienceAudio();
+            playChime();
             onStartStory();
           }}
           className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full px-6 py-3.5 text-sm font-bold shadow-[0_12px_32px_rgba(229,190,109,0.28)] transition-opacity hover:opacity-95 sm:text-base"
@@ -118,7 +184,8 @@ export function LandingStage({
           <button
             type="button"
             onClick={() => {
-              soundEngine.playTap();
+              stopVoice();
+              playTap();
               onSkipToInput();
             }}
             className="flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition-colors hover:opacity-90"
@@ -136,7 +203,8 @@ export function LandingStage({
             <button
               type="button"
               onClick={() => {
-                soundEngine.playTap();
+                stopVoice();
+                playTap();
                 onResumeSaved();
               }}
               className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition-colors hover:opacity-90"
@@ -176,6 +244,17 @@ export function StoryIntroStage({
   const [beatIdx, setBeatIdx] = useState(0);
   const [topicPicked, setTopicPicked] = useState(false);
 
+  const {
+    voiceEnabled,
+    isSpeaking,
+    speakClipOrText,
+    stopVoice,
+    playTap,
+    playChime,
+  } = useMediaAudio();
+
+  const spokenSignatureRef = useRef<string | null>(null);
+
   const currentBeat = INTRO_BEATS[beatIdx] ?? INTRO_BEATS[0];
   const isChoiceBeat = Boolean(currentBeat.isChoice) && !topicPicked;
 
@@ -184,25 +263,71 @@ export function StoryIntroStage({
       ? FOCUS_TOPIC_META[focusTopic].seohwaReply
       : currentBeat.text;
 
+  const activeVoiceKey =
+    currentBeat.isChoice && topicPicked
+      ? FOCUS_TOPIC_META[focusTopic].voiceKey
+      : currentBeat.voiceKey;
+
   const dialogueMood =
     currentBeat.isChoice && topicPicked
       ? `${FOCUS_TOPIC_META[focusTopic].tag} 선택 완료`
       : currentBeat.moodLabel;
 
+  useEffect(() => {
+    if (!voiceEnabled) {
+      spokenSignatureRef.current = null;
+      return;
+    }
+    const sig = `${beatIdx}:${activeVoiceKey ?? dialogueText}`;
+    if (spokenSignatureRef.current === sig) return;
+    spokenSignatureRef.current = sig;
+    speakClipOrText({
+      voiceKey: activeVoiceKey,
+      text: dialogueText,
+    });
+  }, [voiceEnabled, beatIdx, activeVoiceKey, dialogueText, speakClipOrText]);
+
+  useEffect(() => {
+    return () => {
+      stopVoice();
+    };
+  }, [stopVoice]);
+
   const handleAdvance = () => {
     if (isChoiceBeat) return;
-    soundEngine.playTap();
+    playTap();
     if (beatIdx < INTRO_BEATS.length - 1) {
       setBeatIdx((prev) => prev + 1);
     } else {
+      stopVoice();
       onComplete();
     }
   };
 
   const handlePickTopic = (topic: FocusTopic) => {
-    soundEngine.playChime();
+    playChime();
     onSelectFocusTopic(topic);
     setTopicPicked(true);
+    if (voiceEnabled) {
+      const meta = FOCUS_TOPIC_META[topic];
+      spokenSignatureRef.current = `${beatIdx}:${meta.voiceKey}`;
+      speakClipOrText({
+        voiceKey: meta.voiceKey,
+        text: meta.seohwaReply,
+      });
+    }
+  };
+
+  const handleToggleSpeak = () => {
+    if (isSpeaking) {
+      stopVoice();
+      return;
+    }
+    speakClipOrText({
+      voiceKey: activeVoiceKey,
+      text: dialogueText,
+      force: true,
+    });
   };
 
   return (
@@ -231,7 +356,8 @@ export function StoryIntroStage({
         <button
           type="button"
           onClick={() => {
-            soundEngine.playTap();
+            stopVoice();
+            playTap();
             onSkip();
           }}
           className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:opacity-90"
@@ -269,6 +395,7 @@ export function StoryIntroStage({
               }
               size="stage"
               dominantElement="earth"
+              isSpeaking={isSpeaking}
             />
           </motion.div>
         </AnimatePresence>
@@ -287,6 +414,8 @@ export function StoryIntroStage({
         showContinueCue={!isChoiceBeat}
         onAdvance={isChoiceBeat ? undefined : handleAdvance}
         showPortrait={false}
+        isSpeaking={isSpeaking}
+        onToggleSpeak={handleToggleSpeak}
       >
         {isChoiceBeat && (
           <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
@@ -361,6 +490,15 @@ export function ConversationalInputStage({
   const [step, setStep] = useState<1 | 2>(1);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  const {
+    voiceEnabled,
+    isSpeaking,
+    speakClipOrText,
+    stopVoice,
+    playTap,
+    playChime,
+  } = useMediaAudio();
+
   const [form, setForm] = useState<BirthInput>(() => ({
     name: initialValue?.name && !initialValue.id?.startsWith('preset-')
       ? initialValue.name
@@ -379,6 +517,36 @@ export function ConversationalInputStage({
     useEquationOfTime: initialValue?.useEquationOfTime ?? false,
     jasiMode: initialValue?.jasiMode ?? 'yajasi',
   }));
+
+  const inputVoiceKey = step === 1 ? 'input-1' : 'input-2';
+  const inputDialogueText =
+    step === 1 ? voiceLines['input-1'] : voiceLines['input-2'];
+
+  useEffect(() => {
+    if (!voiceEnabled) return;
+    speakClipOrText({
+      voiceKey: inputVoiceKey,
+      text: inputDialogueText,
+    });
+  }, [voiceEnabled, inputVoiceKey, inputDialogueText, speakClipOrText]);
+
+  useEffect(() => {
+    return () => {
+      stopVoice();
+    };
+  }, [stopVoice]);
+
+  const handleToggleInputSpeak = () => {
+    if (isSpeaking) {
+      stopVoice();
+      return;
+    }
+    speakClipOrText({
+      voiceKey: inputVoiceKey,
+      text: inputDialogueText,
+      force: true,
+    });
+  };
 
   const maxDay =
     form.calendarType === 'lunar'
@@ -416,7 +584,8 @@ export function ConversationalInputStage({
   }, [form.hour, form.minute]);
 
   const handleQuickDemo = () => {
-    soundEngine.playChime();
+    stopVoice();
+    playChime();
     const demo = PRESET_PROFILES[0];
     onSubmit({
       ...demo,
@@ -425,14 +594,15 @@ export function ConversationalInputStage({
     });
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (step === 1) {
-      soundEngine.playTap();
+      playTap();
       setStep(2);
       return;
     }
-    soundEngine.playChime();
+    stopVoice();
+    playChime();
     onSubmit({
       ...form,
       name: form.name.trim() || '밤의 여행자',
@@ -449,11 +619,9 @@ export function ConversationalInputStage({
       <SeohwaDialogueCard
         expression="focus"
         moodLabel={`명식 입력 · ${step}/2단계`}
-        text={
-          step === 1
-            ? '먼저 내가 너를 뭐라고 부르면 될까? 성별까지 알려주면 대운이 흐르는 방향부터 딱 잡을 수 있어.'
-            : '좋아. 이제 태어난 날과 시각만 알려줘. 시를 정확히 모르면 "출생시간 모름"을 눌러도 괜찮아.'
-        }
+        text={inputDialogueText}
+        isSpeaking={isSpeaking}
+        onToggleSpeak={handleToggleInputSpeak}
         className="mb-5"
       />
 
@@ -505,7 +673,7 @@ export function ConversationalInputStage({
                 className="block text-xs font-semibold"
                 style={{ color: 'var(--text-secondary)' }}
               >
-                성별 (대운 순·역행 기준)
+                성별 (10년 인생 계절 ‘대운’이 순행/역행하는 기준)
               </span>
               <div className="grid grid-cols-2 gap-2.5">
                 {(
@@ -520,7 +688,7 @@ export function ConversationalInputStage({
                       key={g.id}
                       type="button"
                       onClick={() => {
-                        soundEngine.playTap();
+                        playTap();
                         setForm((prev) => ({ ...prev, gender: g.id }));
                       }}
                       aria-pressed={active}
@@ -561,7 +729,11 @@ export function ConversationalInputStage({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onBackToStory}
+                  onClick={() => {
+                    stopVoice();
+                    playTap();
+                    onBackToStory();
+                  }}
                   className="min-h-[46px] rounded-full border px-4 py-2 text-xs font-semibold"
                   style={{
                     backgroundColor: 'var(--surface-1)',
@@ -613,13 +785,14 @@ export function ConversationalInputStage({
                     <button
                       key={c.id}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        playTap();
                         setForm((prev) => ({
                           ...prev,
                           calendarType: c.id,
                           isLeapMonth: c.id === 'solar' ? false : prev.isLeapMonth,
-                        }))
-                      }
+                        }));
+                      }}
                       className="min-h-[36px] rounded-full border px-3.5 py-1 text-xs font-semibold transition-colors"
                       style={{
                         backgroundColor: active
@@ -776,12 +949,13 @@ export function ConversationalInputStage({
                   type="button"
                   role="switch"
                   aria-checked={Boolean(form.unknownTime)}
-                  onClick={() =>
+                  onClick={() => {
+                    playTap();
                     setForm((prev) => ({
                       ...prev,
                       unknownTime: !prev.unknownTime,
-                    }))
-                  }
+                    }));
+                  }}
                   className="min-h-[36px] rounded-full border px-3 py-1 text-xs font-semibold transition-colors"
                   style={{
                     backgroundColor: form.unknownTime
@@ -798,6 +972,18 @@ export function ConversationalInputStage({
                   출생시간 모름 {form.unknownTime ? '✓' : ''}
                 </button>
               </div>
+
+              <p
+                className="rounded-xl border px-3 py-2 text-[11px] leading-relaxed"
+                style={{
+                  backgroundColor: 'rgba(229, 190, 109, 0.06)',
+                  borderColor: 'rgba(229, 190, 109, 0.2)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                💡 <strong style={{ color: 'var(--accent-gold)' }}>12시진이란?</strong>{' '}
+                하루 24시간을 두 시간씩 12구간으로 나눈 전통 시간표예요. 정확한 분을 모르더라도 대략적인 시간대 버튼만 콕 눌러주면 돼요.
+              </p>
 
               <div className={form.unknownTime ? 'pointer-events-none opacity-45' : ''}>
                 <div className="mb-2 flex items-center gap-3">
@@ -834,14 +1020,15 @@ export function ConversationalInputStage({
                         key={s.key}
                         type="button"
                         disabled={Boolean(form.unknownTime)}
-                        onClick={() =>
+                        onClick={() => {
+                          playTap();
                           setForm((prev) => ({
                             ...prev,
                             hour: s.hour,
                             minute: s.minute,
                             unknownTime: false,
-                          }))
-                        }
+                          }));
+                        }}
                         className="flex min-h-[42px] flex-col items-center justify-center rounded-xl border px-1 py-1 text-center transition-colors"
                         style={{
                           backgroundColor: active
@@ -888,22 +1075,22 @@ export function ConversationalInputStage({
                 type="button"
                 aria-expanded={advancedOpen}
                 onClick={() => setAdvancedOpen((prev) => !prev)}
-                className="flex min-h-[44px] w-full items-center justify-between px-4 py-2.5 text-left text-xs font-semibold"
+                className="flex min-h-[44px] w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-xs font-semibold"
                 style={{ color: 'var(--text-primary)' }}
               >
-                <span className="flex items-center gap-2">
+                <span className="flex flex-wrap items-center gap-1.5">
                   <Compass
-                    className="h-3.5 w-3.5"
+                    className="h-3.5 w-3.5 shrink-0"
                     style={{ color: 'var(--accent-gold)' }}
                   />
-                  출생 도시 & 진태양시 정밀 옵션
+                  <span>출생 도시 & 진태양시 정밀 옵션</span>
                   <span className="font-normal" style={{ color: 'var(--text-muted)' }}>
                     ({activeCity.nameKo} ·{' '}
                     {form.useTrueSolarTime ? `${cityTstOffset}분 보정` : '보정 OFF'})
                   </span>
                 </span>
                 <ChevronDown
-                  className={`h-4 w-4 transition-transform ${
+                  className={`h-4 w-4 shrink-0 transition-transform ${
                     advancedOpen ? 'rotate-180' : ''
                   }`}
                   style={{ color: 'var(--text-muted)' }}
@@ -915,6 +1102,18 @@ export function ConversationalInputStage({
                   className="space-y-3 border-t p-4 text-xs"
                   style={{ borderColor: 'var(--border-subtle)' }}
                 >
+                  <p
+                    className="rounded-xl border px-3 py-2 text-[11px] leading-relaxed"
+                    style={{
+                      backgroundColor: 'var(--surface-2)',
+                      borderColor: 'var(--border-subtle)',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    ☀️ <strong style={{ color: 'var(--accent-gold)' }}>진태양시란?</strong>{' '}
+                    한국 시계는 동경 135° 표준시를 써서 실제 태양이 머리 위에 뜨는 하늘 시간과 서울 기준 약 32분 차이가 나요. 태어난 도시의 진짜 태양 위치로 시주를 맞춰 더 정교하게 풀어드려요.
+                  </p>
+
                   <div>
                     <label
                       htmlFor="story-birth-city"
@@ -954,7 +1153,8 @@ export function ConversationalInputStage({
                         진태양시 보정
                       </div>
                       <div style={{ color: 'var(--text-muted)' }}>
-                        경도 시차 보정 ({activeCity.nameKo} {cityTstOffset >= 0 ? `+${cityTstOffset}` : cityTstOffset}분)
+                        경도 시차 보정 ({activeCity.nameKo}{' '}
+                        {cityTstOffset >= 0 ? `+${cityTstOffset}` : cityTstOffset}분)
                       </div>
                     </div>
                     <button
@@ -982,38 +1182,43 @@ export function ConversationalInputStage({
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    {(
-                      [
-                        { id: 'yajasi', label: '야자시 (당일 일주)' },
-                        { id: 'jojasi', label: '조자시 (익일 일주)' },
-                      ] as { id: JasiMode; label: string }[]
-                    ).map((mode) => {
-                      const active = form.jasiMode === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          type="button"
-                          onClick={() =>
-                            setForm((prev) => ({ ...prev, jasiMode: mode.id }))
-                          }
-                          className="min-h-[38px] rounded-xl border px-3 py-1.5 font-semibold"
-                          style={{
-                            backgroundColor: active
-                              ? 'var(--accent-gold-soft)'
-                              : 'var(--surface-2)',
-                            borderColor: active
-                              ? 'var(--accent-gold)'
-                              : 'var(--border-subtle)',
-                            color: active
-                              ? 'var(--accent-gold)'
-                              : 'var(--text-secondary)',
-                          }}
-                        >
-                          {mode.label}
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-1.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      {(
+                        [
+                          { id: 'yajasi', label: '야자시 (당일 일주)' },
+                          { id: 'jojasi', label: '조자시 (익일 일주)' },
+                        ] as { id: JasiMode; label: string }[]
+                      ).map((mode) => {
+                        const active = form.jasiMode === mode.id;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() =>
+                              setForm((prev) => ({ ...prev, jasiMode: mode.id }))
+                            }
+                            className="min-h-[38px] rounded-xl border px-3 py-1.5 font-semibold"
+                            style={{
+                              backgroundColor: active
+                                ? 'var(--accent-gold-soft)'
+                                : 'var(--surface-2)',
+                              borderColor: active
+                                ? 'var(--accent-gold)'
+                                : 'var(--border-subtle)',
+                              color: active
+                                ? 'var(--accent-gold)'
+                                : 'var(--text-secondary)',
+                            }}
+                          >
+                            {mode.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      밤 23:30~01:29 사이 출생자를 위한 기준이에요. 보통은 오늘 날짜를 유지하는 ‘야자시’를 써요.
+                    </p>
                   </div>
                 </div>
               )}
@@ -1022,7 +1227,10 @@ export function ConversationalInputStage({
             <div className="flex items-center justify-between gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setStep(1)}
+                onClick={() => {
+                  playTap();
+                  setStep(1);
+                }}
                 className="min-h-[46px] rounded-full border px-4 py-2 text-xs font-semibold"
                 style={{
                   backgroundColor: 'var(--surface-1)',
@@ -1072,22 +1280,42 @@ export function RitualLoadingStage({
   onComplete,
 }: RitualLoadingStageProps) {
   const [stepIdx, setStepIdx] = useState(0);
+  const {
+    voiceEnabled,
+    isSpeaking,
+    speakClipOrText,
+    stopVoice,
+    playRitual,
+    playReveal,
+  } = useMediaAudio();
+
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
-    soundEngine.playRitual();
+    playRitual();
     const t1 = window.setTimeout(() => setStepIdx(1), 700);
     const t2 = window.setTimeout(() => setStepIdx(2), 1400);
     const doneTimer = window.setTimeout(() => {
-      soundEngine.playReveal();
-      onComplete();
+      playReveal();
+      onCompleteRef.current();
     }, 2150);
 
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
       window.clearTimeout(doneTimer);
+      stopVoice();
     };
-  }, [onComplete]);
+  }, [playRitual, playReveal, stopVoice]);
+
+  useEffect(() => {
+    if (!voiceEnabled) return;
+    speakClipOrText({
+      voiceKey: 'ritual-1',
+      text: voiceLines['ritual-1'],
+    });
+  }, [voiceEnabled, speakClipOrText]);
 
   return (
     <section
@@ -1095,9 +1323,17 @@ export function RitualLoadingStage({
       className="mx-auto flex min-h-[calc(100dvh-76px)] w-full max-w-xl flex-col items-center justify-center px-4 py-10 text-center"
     >
       <div className="relative flex flex-col items-center">
-        <SeohwaPortrait expression="focus" size="card" dominantElement="earth" />
+        <SeohwaPortrait
+          expression="focus"
+          size="card"
+          dominantElement="earth"
+          isSpeaking={isSpeaking}
+        />
         <div className="-mt-6">
-          <YinYangLoader size={88} label={`${userName || '여행자'}님의 천명 해독 중`} />
+          <YinYangLoader
+            size={88}
+            label={`${userName || '여행자'}님의 천명 해독 중`}
+          />
         </div>
       </div>
 

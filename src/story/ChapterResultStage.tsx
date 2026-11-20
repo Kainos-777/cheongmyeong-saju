@@ -3,17 +3,21 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Check,
+  ChevronDown,
   Copy,
   Download,
   Flame,
   HeartHandshake,
   Image as ImageIcon,
+  LockOpen,
   RotateCcw,
   Share2,
   Sparkles,
   UserPlus,
 } from 'lucide-react';
+import { useMediaAudio } from '../audio/mediaAudioEngine';
 import {
   CompatibilityPanel,
   DaewoonExplorer,
@@ -37,13 +41,13 @@ import type {
 } from '../types/saju';
 import { SeohwaDialogueCard, SeohwaPortrait } from './SeohwaVisuals';
 import {
+  SAJU_PLAIN_GLOSSARY,
   buildChapterScripts,
   buildCompatibilityQuote,
   buildSeohwaRoasts,
   buildShareUrl,
   downloadViralCardPng,
   generateViralStoryCardSvg,
-  soundEngine,
   type FocusTopic,
   type ResultChapter,
 } from './storyCore';
@@ -92,6 +96,16 @@ export function ChapterResultStage({
   onCustomInputPersonA,
   onCustomInputPersonB,
 }: ChapterResultStageProps) {
+  const {
+    voiceEnabled,
+    isSpeaking,
+    speakClipOrText,
+    stopVoice,
+    playTap,
+    playChime,
+    playReveal,
+  } = useMediaAudio();
+
   const [selectedElement, setSelectedElement] = useState<ElementKey | null>(
     sajuResult.dominantElement,
   );
@@ -112,10 +126,18 @@ export function ChapterResultStage({
   const [copiedLink, setCopiedLink] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [downloadingCard, setDownloadingCard] = useState(false);
+  const [unlockedSecrets, setUnlockedSecrets] = useState<
+    Record<number, boolean>
+  >({});
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [speakingTarget, setSpeakingTarget] = useState<'chapter' | 'secret'>(
+    'chapter',
+  );
 
   useEffect(() => {
     setSelectedElement(sajuResult.dominantElement);
     setActiveDaewoonIdx(initialDaewoonIdx);
+    setUnlockedSecrets({});
   }, [sajuResult, initialDaewoonIdx]);
 
   const { chapters, viralOneLiner } = useMemo(
@@ -127,6 +149,57 @@ export function ChapterResultStage({
     () => buildCompatibilityQuote(compatibility),
     [compatibility],
   );
+
+  const currentScript = chapters[chapter] ?? chapters[0];
+  const chapterDialogueText =
+    chapter === 3 ? compatQuote : currentScript.dialogue;
+  const chapterSpeechText = currentScript.headline
+    ? `${currentScript.headline}. ${chapterDialogueText}`
+    : chapterDialogueText;
+
+  // Auto-speak chapter dialogue when voice is enabled; stop cleanly on chapter change/unmount
+  useEffect(() => {
+    if (voiceEnabled) {
+      setSpeakingTarget('chapter');
+      speakClipOrText({ text: chapterSpeechText });
+    }
+    return () => {
+      stopVoice();
+    };
+  }, [voiceEnabled, chapter, chapterSpeechText, speakClipOrText, stopVoice]);
+
+  const handleToggleChapterSpeak = () => {
+    if (isSpeaking && speakingTarget === 'chapter') {
+      stopVoice();
+      return;
+    }
+    setSpeakingTarget('chapter');
+    speakClipOrText({
+      text: chapterSpeechText,
+      force: true,
+    });
+  };
+
+  const handleUnlockSecret = (targetChapter: ResultChapter) => {
+    setUnlockedSecrets((prev) => ({ ...prev, [targetChapter]: true }));
+    playChime();
+    if (voiceEnabled && currentScript.secretReveal) {
+      setSpeakingTarget('secret');
+      speakClipOrText({ text: currentScript.secretReveal });
+    }
+  };
+
+  const handleToggleSecretSpeak = () => {
+    if (isSpeaking && speakingTarget === 'secret') {
+      stopVoice();
+      return;
+    }
+    setSpeakingTarget('secret');
+    speakClipOrText({
+      text: currentScript.secretReveal,
+      force: true,
+    });
+  };
 
   const viralSvgMarkup = useMemo(
     () =>
@@ -149,7 +222,7 @@ export function ChapterResultStage({
   );
 
   const goChapter = (next: ResultChapter) => {
-    soundEngine.playChime();
+    playChime();
     onChangeChapter(next);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -158,7 +231,7 @@ export function ChapterResultStage({
 
   const handleSaveViralCard = async () => {
     setDownloadingCard(true);
-    soundEngine.playReveal();
+    playReveal();
     try {
       const kind = await downloadViralCardPng(
         viralSvgMarkup,
@@ -175,7 +248,7 @@ export function ChapterResultStage({
   };
 
   const handleCopyShareLink = async () => {
-    soundEngine.playTap();
+    playTap();
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareUrl);
@@ -206,8 +279,10 @@ export function ChapterResultStage({
     await handleCopyShareLink();
   };
 
-  const currentScript = chapters[chapter] ?? chapters[0];
   const iljuHangul = `${sajuResult.pillars.day.stem.hangul}${sajuResult.pillars.day.branch.hangul}일주`;
+  const isChapterSpeaking = isSpeaking && speakingTarget === 'chapter';
+  const isSecretSpeaking = isSpeaking && speakingTarget === 'secret';
+  const isSecretUnlocked = Boolean(unlockedSecrets[chapter]);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 px-3 pt-2 pb-16 sm:px-5">
@@ -230,7 +305,10 @@ export function ChapterResultStage({
               <Sparkles className="h-3.5 w-3.5" />
               공유된 무료 사주 열람 중 (로그인·인증 없음)
             </div>
-            <p className="text-xs sm:text-sm" style={{ color: 'var(--text-primary)' }}>
+            <p
+              className="text-xs sm:text-sm"
+              style={{ color: 'var(--text-primary)' }}
+            >
               지금 <strong>{sajuResult.input.name}</strong>님의 명식을 보고 있어요.
               내 생일 넣고 바로 비교해 볼까요?
             </p>
@@ -239,7 +317,8 @@ export function ChapterResultStage({
             <button
               type="button"
               onClick={() => {
-                soundEngine.playChime();
+                stopVoice();
+                playChime();
                 onClaimOwnReading();
               }}
               className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-bold shadow"
@@ -321,11 +400,204 @@ export function ChapterResultStage({
             expression={currentScript.expression}
             moodLabel={currentScript.moodLabel}
             headline={currentScript.headline}
-            text={
-              chapter === 3 ? compatQuote : currentScript.dialogue
-            }
+            text={chapterDialogueText}
             dominantElement={sajuResult.dominantElement}
+            isSpeaking={isChapterSpeaking}
+            onToggleSpeak={handleToggleChapterSpeak}
           />
+
+          {/* "밀당" Curiosity Secret Reveal Card (Chapters 0, 1, 2, 3) */}
+          {chapter <= 3 && currentScript.secretTease && (
+            <div
+              className="overflow-hidden rounded-[22px] border p-4 sm:p-5"
+              style={{
+                background:
+                  'linear-gradient(135deg, rgba(229, 190, 109, 0.09) 0%, rgba(16, 20, 32, 0.86) 100%)',
+                borderColor: isSecretUnlocked
+                  ? 'rgba(229, 190, 109, 0.52)'
+                  : 'rgba(229, 190, 109, 0.34)',
+              }}
+            >
+              {!isSecretUnlocked ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <div
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-wide"
+                      style={{ color: 'var(--accent-gold)' }}
+                    >
+                      <LockOpen className="h-3.5 w-3.5" />
+                      서화의 밀당 시크릿 · 100% 무료 해금
+                    </div>
+                    <p
+                      className="font-serif-kr text-sm leading-relaxed"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      {currentScript.secretTease}
+                    </p>
+                  </div>
+
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => handleUnlockSecret(chapter)}
+                    className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-1.5 rounded-full border px-4 py-2.5 text-xs font-bold shadow-[0_8px_22px_rgba(229,190,109,0.22)] transition-opacity hover:opacity-95"
+                    style={{
+                      backgroundColor: 'var(--accent-gold)',
+                      borderColor: 'rgba(246, 223, 157, 0.65)',
+                      color: '#07080d',
+                    }}
+                  >
+                    🔓 서화가 망설이다 꺼낸 비밀 한 줄 열어보기 (무료)
+                  </motion.button>
+                </div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                  className="space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold"
+                      style={{
+                        backgroundColor: 'rgba(229, 190, 109, 0.18)',
+                        color: 'var(--accent-gold)',
+                      }}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      비밀 한 줄 해금 완료
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={handleToggleSecretSpeak}
+                      aria-label="해금된 비밀 한 줄 음성 재생/정지"
+                      className="inline-flex min-h-[32px] items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold"
+                      style={{
+                        backgroundColor: isSecretSpeaking
+                          ? 'rgba(229, 190, 109, 0.2)'
+                          : 'var(--surface-1)',
+                        borderColor: isSecretSpeaking
+                          ? 'rgba(229, 190, 109, 0.6)'
+                          : 'var(--border-subtle)',
+                        color: isSecretSpeaking
+                          ? 'var(--accent-gold)'
+                          : 'var(--text-secondary)',
+                      }}
+                    >
+                      {isSecretSpeaking ? '⏹ 멈춤' : '🔊 비밀 듣기'}
+                    </button>
+                  </div>
+
+                  <p
+                    className="text-sm leading-relaxed sm:text-[15px]"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {currentScript.secretReveal}
+                  </p>
+                </motion.div>
+              )}
+            </div>
+          )}
+
+          {/* Beginner-Friendly "10초 사주 용어 쉽게 보기" Toggle (Chapters 0 & 1) */}
+          {(chapter === 0 || chapter === 1) && (
+            <div
+              className="overflow-hidden rounded-[20px] border"
+              style={{
+                backgroundColor: 'var(--surface-1)',
+                borderColor: glossaryOpen
+                  ? 'rgba(229, 190, 109, 0.36)'
+                  : 'var(--border-subtle)',
+              }}
+            >
+              <button
+                type="button"
+                aria-expanded={glossaryOpen}
+                onClick={() => {
+                  playTap();
+                  setGlossaryOpen((prev) => !prev);
+                }}
+                className="flex min-h-[48px] w-full items-center justify-between gap-2 px-4 py-3 text-left text-xs font-bold sm:px-5 sm:text-sm"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <span className="flex flex-wrap items-center gap-2">
+                  <BookOpen
+                    className="h-4 w-4 shrink-0"
+                    style={{ color: 'var(--accent-gold)' }}
+                  />
+                  <span>💡 10초 사주 용어 쉽게 보기</span>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor: 'var(--accent-gold-soft)',
+                      color: 'var(--accent-gold)',
+                    }}
+                  >
+                    초보용 치트키 {SAJU_PLAIN_GLOSSARY.length}선
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 transition-transform ${
+                    glossaryOpen ? 'rotate-180' : ''
+                  }`}
+                  style={{ color: 'var(--text-muted)' }}
+                />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {glossaryOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.22 }}
+                    className="overflow-hidden border-t"
+                    style={{ borderColor: 'var(--border-subtle)' }}
+                  >
+                    <div className="grid grid-cols-1 gap-2.5 p-4 sm:grid-cols-2 sm:p-5">
+                      {SAJU_PLAIN_GLOSSARY.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border p-3.5"
+                          style={{
+                            backgroundColor: 'var(--bg-elevated)',
+                            borderColor: 'var(--border-subtle)',
+                          }}
+                        >
+                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[11px] font-bold"
+                              style={{
+                                backgroundColor: 'var(--accent-gold-soft)',
+                                color: 'var(--accent-gold)',
+                              }}
+                            >
+                              {item.term} ({item.hanja})
+                            </span>
+                            <span
+                              className="text-xs font-bold"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {item.plainTitle}
+                            </span>
+                          </div>
+                          <p
+                            className="text-xs leading-relaxed"
+                            style={{ color: 'var(--text-secondary)' }}
+                          >
+                            {item.easyDesc}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* CHAPTER 0: 1장 타고난 기질 팩폭 */}
           {chapter === 0 && (
@@ -492,7 +764,7 @@ export function ChapterResultStage({
                     pillar={pillar}
                     index={index}
                     isDayMaster={isDayMaster}
-                    onFlip={() => soundEngine.playTap()}
+                    onFlip={() => playTap()}
                   />
                 )}
               />
@@ -511,7 +783,7 @@ export function ChapterResultStage({
                     avoidElement={sajuResult.yongshin.avoidElement}
                     selectedElement={selectedElement}
                     onSelectElement={(el) => {
-                      soundEngine.playTap();
+                      playTap();
                       setSelectedElement(el);
                     }}
                   />
@@ -521,7 +793,7 @@ export function ChapterResultStage({
                     result={sajuResult}
                     selectedElement={selectedElement}
                     onSelectElement={(el) => {
-                      soundEngine.playTap();
+                      playTap();
                       setSelectedElement(el);
                     }}
                   />
@@ -550,7 +822,10 @@ export function ChapterResultStage({
                     >
                       10년 대운(大運) 파동 그래프
                     </h3>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <p
+                      className="text-xs"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
                       파동 위의 시기를 클릭하면 아래에서 그 시기의 상세 운세를 볼 수 있어요
                     </p>
                   </div>
@@ -569,7 +844,7 @@ export function ChapterResultStage({
                   daewoon={sajuResult.daewoon}
                   activeIndex={activeDaewoonIdx}
                   onSelect={(idx) => {
-                    soundEngine.playTap();
+                    playTap();
                     setActiveDaewoonIdx(idx);
                   }}
                   currentAge={currentAge}
@@ -580,7 +855,7 @@ export function ChapterResultStage({
                 result={sajuResult}
                 activeDaewoonIndex={activeDaewoonIdx}
                 onSelectDaewoon={(idx) => {
-                  soundEngine.playTap();
+                  playTap();
                   setActiveDaewoonIdx(idx);
                 }}
                 currentAge={currentAge}
@@ -596,11 +871,11 @@ export function ChapterResultStage({
               selectedPersonAId={personAId}
               selectedPersonBId={personBId}
               onSelectPersonA={(id) => {
-                soundEngine.playTap();
+                playTap();
                 onSelectPersonA(id);
               }}
               onSelectPersonB={(id) => {
-                soundEngine.playTap();
+                playTap();
                 onSelectPersonB(id);
               }}
               onCustomInputPersonA={onCustomInputPersonA}
@@ -620,7 +895,10 @@ export function ChapterResultStage({
                   borderColor: 'rgba(229, 190, 109, 0.28)',
                 }}
               >
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--accent-gold)' }}>
+                <div
+                  className="mb-3 flex items-center gap-2 text-xs font-semibold"
+                  style={{ color: 'var(--accent-gold)' }}
+                >
                   <Sparkles className="h-3.5 w-3.5" />
                   인스타 스토리 · 카카오톡 9:16 카드 (1080×1920)
                 </div>
@@ -633,7 +911,8 @@ export function ChapterResultStage({
               </div>
 
               {/* Viral Share Actions */}
-              <div className="flex flex-col justify-between gap-5 rounded-[24px] border p-5 sm:p-6 lg:col-span-6"
+              <div
+                className="flex flex-col justify-between gap-5 rounded-[24px] border p-5 sm:p-6 lg:col-span-6"
                 style={{
                   backgroundColor: 'var(--surface-1)',
                   borderColor: 'var(--border-subtle)',
@@ -645,6 +924,7 @@ export function ChapterResultStage({
                       expression="warm"
                       size="compact"
                       dominantElement={sajuResult.dominantElement}
+                      isSpeaking={isSpeaking}
                     />
                     <div>
                       <h3
@@ -653,7 +933,10 @@ export function ChapterResultStage({
                       >
                         저장하고 바로 공유해 봐!
                       </h3>
-                      <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                      <p
+                        className="text-xs leading-relaxed"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
                         인증 잠금도, 결제 유도도 없어. 링크를 받은 친구도 바로 네 사주를 보고 자기 사주·궁합까지 무료로 테스트할 수 있어.
                       </p>
                     </div>
@@ -713,7 +996,7 @@ export function ChapterResultStage({
                     <button
                       type="button"
                       onClick={() => {
-                        soundEngine.playTap();
+                        playTap();
                         onOpenPosterModal();
                       }}
                       className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-xs font-semibold transition-colors"
@@ -749,7 +1032,8 @@ export function ChapterResultStage({
                   <button
                     type="button"
                     onClick={() => {
-                      soundEngine.playTap();
+                      stopVoice();
+                      playTap();
                       onStartNewReading();
                     }}
                     className="inline-flex min-h-[42px] items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
@@ -766,7 +1050,8 @@ export function ChapterResultStage({
                   <button
                     type="button"
                     onClick={() => {
-                      soundEngine.playTap();
+                      stopVoice();
+                      playTap();
                       onReplayOpening();
                     }}
                     className="inline-flex min-h-[42px] items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold"
