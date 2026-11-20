@@ -1,142 +1,285 @@
 import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
+import { Moon, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { ExportShareModal } from './components';
 import {
-  BirthInputSheet,
-  BottomTabBar,
-  ExportShareModal,
-  HeaderNav,
-} from './components';
-import { BIRTH_CITIES, PRESET_PROFILES } from './engine';
-import { AmbientCosmosCanvas, MotionProvider } from './motion';
-import { CompatibilityPage } from './pages/CompatibilityPage';
-import { DesignSystemPage } from './pages/DesignSystemPage';
-import { ElementsPage } from './pages/ElementsPage';
-import { LuckTimelinePage } from './pages/LuckTimelinePage';
-import { PillarsPage } from './pages/PillarsPage';
+  AmbientCosmosCanvas,
+  DEFAULT_MOTION_SETTINGS,
+  MotionProvider,
+} from './motion';
 import { SajuStoreProvider, useSajuStore } from './store/sajuStore';
 import {
-  DesignerStudioDrawer,
-  DesignerStudioProvider,
-  DeviceFrameStage,
-  GridOverlay,
-  useDesignerStudio,
-} from './studio';
+  ChapterResultStage,
+  ConversationalInputStage,
+  LandingStage,
+  RitualLoadingStage,
+  StoryIntroStage,
+  useSoundEngine,
+} from './story';
 
-function CheongmyeongAppShell() {
-  const { tokens, toggleStudio } = useDesignerStudio();
+function CheongmyeongStoryShell() {
   const {
     profiles,
     activeProfile,
     sajuResult,
-    activeTab,
-    birthInputModal,
+    personAId,
+    personBId,
+    compatibility,
     exportModalOpen,
-    setActiveTab,
-    selectProfile,
-    saveProfile,
-    deleteProfile,
-    openBirthInput,
-    closeBirthInput,
+    stage,
+    chapter,
+    focusTopic,
+    isSharedView,
+    hasUserSubmittedProfile,
+    pillarOrder,
+    setStage,
+    setChapter,
+    setFocusTopic,
+    togglePillarOrder,
+    startReading,
+    claimOwnReading,
+    setPersonAId,
+    setPersonBId,
+    saveCustomCompatibilityProfile,
     openExportModal,
     closeExportModal,
   } = useSajuStore();
 
-  const renderActivePage = () => {
-    switch (activeTab) {
-      case 'pillars':
-        return <PillarsPage />;
-      case 'elements':
-        return <ElementsPage />;
-      case 'luck':
-        return <LuckTimelinePage />;
-      case 'compatibility':
-        return <CompatibilityPage />;
-      case 'design-system':
-        return <DesignSystemPage />;
-      default:
-        return <PillarsPage />;
-    }
-  };
+  const { soundEnabled, toggleSound, playTap } = useSoundEngine();
 
   return (
-    <MotionProvider settings={tokens.motion}>
-      <MotionConfig reducedMotion={tokens.motion.reducedMotion ? 'always' : 'never'}>
-        <DeviceFrameStage>
-          <div className="relative min-h-dvh w-full">
-            <AmbientCosmosCanvas
-              dominantElement={sajuResult.dominantElement}
-              theme={tokens.theme}
-            />
-            <GridOverlay />
+    <MotionProvider settings={DEFAULT_MOTION_SETTINGS}>
+      <MotionConfig reducedMotion="user">
+        <div
+          className="relative min-h-dvh w-full overflow-x-clip"
+          style={{
+            backgroundColor: 'var(--bg-canvas)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <AmbientCosmosCanvas
+            dominantElement={sajuResult.dominantElement}
+            theme="obsidian"
+          />
 
-            <div className="relative z-10 flex min-h-dvh flex-col">
-              <HeaderNav
-                activeTab={activeTab}
-                onChangeTab={setActiveTab}
-                profiles={profiles}
-                activeProfile={activeProfile}
-                onSelectProfile={selectProfile}
-                onDeleteProfile={deleteProfile}
-                onOpenBirthInput={() => openBirthInput('create')}
-                onOpenExport={openExportModal}
-                onToggleStudio={() => toggleStudio()}
-                studioOpen={tokens.studioOpen}
-                dayMasterElement={sajuResult.dayMaster.element}
-                iljuTitle={sajuResult.interpretation.iljuTitle}
-              />
-
-              <main className="mx-auto w-full max-w-7xl flex-1 px-3 pt-4 pb-28 sm:px-5 md:pb-12">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeTab}
-                    initial={
-                      tokens.motion.reducedMotion
-                        ? { opacity: 1 }
-                        : { opacity: 0, y: 10 }
-                    }
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={
-                      tokens.motion.reducedMotion
-                        ? { opacity: 1 }
-                        : { opacity: 0, y: -6 }
-                    }
-                    transition={
-                      tokens.motion.reducedMotion
-                        ? { duration: 0 }
-                        : { duration: 0.2, ease: 'easeOut' }
-                    }
+          {/* Minimal Floating Top Bar: Brand + Sound Toggle */}
+          <header
+            className="sticky top-0 z-40 border-b"
+            style={{
+              backgroundColor: 'rgba(7, 8, 13, 0.72)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              borderColor: 'var(--border-subtle)',
+            }}
+          >
+            <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-3 sm:px-5">
+              <button
+                type="button"
+                onClick={() => {
+                  playTap();
+                  setStage('landing');
+                }}
+                className="flex min-h-[40px] items-center gap-2 rounded-full px-2 py-1 text-left transition-opacity hover:opacity-90"
+                aria-label="청명각 홈으로"
+              >
+                <span
+                  className="flex h-8 w-8 items-center justify-center rounded-full border"
+                  style={{
+                    backgroundColor: 'var(--accent-gold-soft)',
+                    borderColor: 'rgba(229, 190, 109, 0.35)',
+                    color: 'var(--accent-gold)',
+                  }}
+                >
+                  <Moon className="h-4 w-4" />
+                </span>
+                <span className="flex items-baseline gap-1.5">
+                  <span className="font-serif-kr text-sm font-bold tracking-tight sm:text-base">
+                    청명각
+                  </span>
+                  <span
+                    className="font-serif-kr text-xs"
+                    style={{ color: 'var(--accent-gold)' }}
                   >
-                    {renderActivePage()}
-                  </motion.div>
-                </AnimatePresence>
-              </main>
+                    淸明閣
+                  </span>
+                </span>
+              </button>
 
-              <BottomTabBar activeTab={activeTab} onChangeTab={setActiveTab} />
+              <div className="flex items-center gap-2">
+                {stage === 'result' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTap();
+                      setStage('input');
+                    }}
+                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors hover:opacity-90"
+                    style={{
+                      backgroundColor: 'var(--surface-1)',
+                      borderColor: 'var(--border-subtle)',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    새 사주
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={soundEnabled}
+                  aria-label="배경음 및 효과음 토글"
+                  onClick={() => toggleSound()}
+                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors"
+                  style={{
+                    backgroundColor: soundEnabled
+                      ? 'var(--accent-gold-soft)'
+                      : 'var(--surface-1)',
+                    borderColor: soundEnabled
+                      ? 'rgba(229, 190, 109, 0.45)'
+                      : 'var(--border-subtle)',
+                    color: soundEnabled
+                      ? 'var(--accent-gold)'
+                      : 'var(--text-secondary)',
+                  }}
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" />
+                  )}
+                  <span>{soundEnabled ? '소리 ON' : '소리 OFF'}</span>
+                </button>
+              </div>
             </div>
+          </header>
 
-            <BirthInputSheet
-              open={birthInputModal.open}
-              mode={birthInputModal.mode}
-              onClose={closeBirthInput}
-              onSubmit={(input) => saveProfile(input, birthInputModal.mode)}
-              initialValue={
-                birthInputModal.mode === 'edit' ? activeProfile : undefined
-              }
-              cities={BIRTH_CITIES}
-              presets={PRESET_PROFILES}
-            />
+          {/* Main Visual-Novel / Story Flow */}
+          <main className="relative z-10 w-full">
+            <AnimatePresence mode="wait">
+              {stage === 'landing' && (
+                <motion.div
+                  key="stage-landing"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <LandingStage
+                    onStartStory={() => setStage('story')}
+                    onSkipToInput={() => setStage('input')}
+                    onResumeSaved={
+                      hasUserSubmittedProfile
+                        ? () => {
+                            setChapter(0);
+                            setStage('result');
+                          }
+                        : undefined
+                    }
+                    savedProfileName={
+                      hasUserSubmittedProfile ? activeProfile.name : undefined
+                    }
+                  />
+                </motion.div>
+              )}
 
-            <ExportShareModal
-              open={exportModalOpen}
-              onClose={closeExportModal}
-              result={sajuResult}
-              theme={tokens.theme}
-              elementPalette={tokens.elementPalette}
-              pillarOrder={tokens.pillarOrder}
-            />
-          </div>
-        </DeviceFrameStage>
+              {stage === 'story' && (
+                <motion.div
+                  key="stage-story"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <StoryIntroStage
+                    focusTopic={focusTopic}
+                    onSelectFocusTopic={setFocusTopic}
+                    onComplete={() => setStage('input')}
+                    onSkip={() => setStage('input')}
+                  />
+                </motion.div>
+              )}
 
-        <DesignerStudioDrawer showFloatingTrigger />
+              {stage === 'input' && (
+                <motion.div
+                  key="stage-input"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <ConversationalInputStage
+                    initialValue={activeProfile}
+                    onSubmit={startReading}
+                    onBackToStory={() => setStage('story')}
+                  />
+                </motion.div>
+              )}
+
+              {stage === 'ritual' && (
+                <motion.div
+                  key="stage-ritual"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.02 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <RitualLoadingStage
+                    userName={activeProfile.name}
+                    onComplete={() => {
+                      setChapter(0);
+                      setStage('result');
+                    }}
+                  />
+                </motion.div>
+              )}
+
+              {stage === 'result' && (
+                <motion.div
+                  key="stage-result"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <ChapterResultStage
+                    sajuResult={sajuResult}
+                    focusTopic={focusTopic}
+                    chapter={chapter}
+                    onChangeChapter={setChapter}
+                    pillarOrder={pillarOrder}
+                    onTogglePillarOrder={togglePillarOrder}
+                    isSharedView={isSharedView}
+                    onClaimOwnReading={claimOwnReading}
+                    onStartNewReading={() => setStage('input')}
+                    onReplayOpening={() => setStage('story')}
+                    onOpenPosterModal={openExportModal}
+                    compatibility={compatibility}
+                    profiles={profiles}
+                    personAId={personAId}
+                    personBId={personBId}
+                    onSelectPersonA={setPersonAId}
+                    onSelectPersonB={setPersonBId}
+                    onCustomInputPersonA={(input) =>
+                      saveCustomCompatibilityProfile('A', input)
+                    }
+                    onCustomInputPersonB={(input) =>
+                      saveCustomCompatibilityProfile('B', input)
+                    }
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
+
+          <ExportShareModal
+            open={exportModalOpen}
+            onClose={closeExportModal}
+            result={sajuResult}
+            theme="obsidian"
+            pillarOrder={pillarOrder}
+          />
+        </div>
       </MotionConfig>
     </MotionProvider>
   );
@@ -144,11 +287,9 @@ function CheongmyeongAppShell() {
 
 export function App() {
   return (
-    <DesignerStudioProvider>
-      <SajuStoreProvider>
-        <CheongmyeongAppShell />
-      </SajuStoreProvider>
-    </DesignerStudioProvider>
+    <SajuStoreProvider>
+      <CheongmyeongStoryShell />
+    </SajuStoreProvider>
   );
 }
 

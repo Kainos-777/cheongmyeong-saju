@@ -14,6 +14,12 @@ import {
   calculateCompatibility,
   calculateSaju,
 } from '../engine';
+import {
+  readSharedFromLocation,
+  type AppStage,
+  type FocusTopic,
+  type ResultChapter,
+} from '../story/storyCore';
 import type { AppTab } from '../types/design';
 import type {
   BirthInput,
@@ -75,7 +81,9 @@ function loadInitialActiveProfileId(profiles: BirthInput[]): string {
 
 function pickPartnerId(profiles: BirthInput[], primaryId: string): string {
   const presetPartner = profiles.find(
-    (p) => (p.id ?? p.name) === 'preset-partner-sample' && (p.id ?? p.name) !== primaryId,
+    (p) =>
+      (p.id ?? p.name) === 'preset-partner-sample' &&
+      (p.id ?? p.name) !== primaryId,
   );
   if (presetPartner) return presetPartner.id ?? presetPartner.name;
   const other = profiles.find((p) => (p.id ?? p.name) !== primaryId);
@@ -99,6 +107,20 @@ export interface SajuStoreContextValue {
   birthInputModal: BirthInputModalState;
   exportModalOpen: boolean;
   isCalculating: boolean;
+  // Story renewal state
+  stage: AppStage;
+  chapter: ResultChapter;
+  focusTopic: FocusTopic;
+  isSharedView: boolean;
+  hasUserSubmittedProfile: boolean;
+  pillarOrder: 'traditional' | 'modern';
+  setStage: (stage: AppStage) => void;
+  setChapter: (chapter: ResultChapter) => void;
+  setFocusTopic: (topic: FocusTopic) => void;
+  togglePillarOrder: () => void;
+  startReading: (input: BirthInput) => void;
+  claimOwnReading: () => void;
+  // Backwards-compatible actions
   setActiveTab: (tab: AppTab) => void;
   selectProfile: (profileId: string) => void;
   saveProfile: (input: BirthInput, mode?: 'create' | 'edit') => void;
@@ -116,14 +138,51 @@ export interface SajuStoreContextValue {
 const SajuStoreContext = createContext<SajuStoreContextValue | null>(null);
 
 export function SajuStoreProvider({ children }: { children: ReactNode }) {
-  const [profiles, setProfiles] = useState<BirthInput[]>(loadInitialProfiles);
-  const [activeProfileId, setActiveProfileId] = useState<string>(() =>
-    loadInitialActiveProfileId(loadInitialProfiles()),
-  );
+  const initialShared = useMemo(() => readSharedFromLocation(), []);
+
+  const [profiles, setProfiles] = useState<BirthInput[]>(() => {
+    const base = loadInitialProfiles();
+    if (!initialShared) return base;
+    const sharedId = initialShared.input.id ?? `shared-${Date.now()}`;
+    const sharedProfile = { ...initialShared.input, id: sharedId };
+    const withoutDup = base.filter((p) => (p.id ?? p.name) !== sharedId);
+    return [sharedProfile, ...withoutDup];
+  });
+
+  const [activeProfileId, setActiveProfileId] = useState<string>(() => {
+    if (initialShared) {
+      return initialShared.input.id ?? 'shared-profile';
+    }
+    return loadInitialActiveProfileId(loadInitialProfiles());
+  });
+
   const [personAId, setPersonAId] = useState<string>(() => activeProfileId);
   const [personBId, setPersonBId] = useState<string>(() =>
     pickPartnerId(profiles, activeProfileId),
   );
+
+  // Story renewal state
+  const [stage, setStage] = useState<AppStage>(() =>
+    initialShared ? 'result' : 'landing',
+  );
+  const [chapter, setChapter] = useState<ResultChapter>(0);
+  const [focusTopic, setFocusTopic] = useState<FocusTopic>(
+    () => initialShared?.focusTopic ?? 'roast',
+  );
+  const [isSharedView, setIsSharedView] = useState<boolean>(() =>
+    Boolean(initialShared),
+  );
+  const [hasUserSubmittedProfile, setHasUserSubmittedProfile] =
+    useState<boolean>(() =>
+      profiles.some(
+        (p) => p.id && !p.id.startsWith('preset-') && !p.id.startsWith('shared-'),
+      ),
+    );
+  const [pillarOrder, setPillarOrder] = useState<'traditional' | 'modern'>(
+    'traditional',
+  );
+
+  // Legacy-compatible state
   const [activeTab, setActiveTab] = useState<AppTab>('pillars');
   const [birthInputModal, setBirthInputModal] = useState<BirthInputModalState>({
     open: false,
@@ -156,7 +215,10 @@ export function SajuStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+      window.localStorage.setItem(
+        PROFILES_STORAGE_KEY,
+        JSON.stringify(profiles),
+      );
       window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileId);
     } catch {
       // Ignore quota / privacy mode failures
@@ -179,18 +241,69 @@ export function SajuStoreProvider({ children }: { children: ReactNode }) {
   const personBProfile = useMemo(
     () =>
       profiles.find((p) => (p.id ?? p.name) === personBId) ??
-      profiles.find((p) => (p.id ?? p.name) !== (personAProfile.id ?? personAProfile.name)) ??
+      profiles.find(
+        (p) => (p.id ?? p.name) !== (personAProfile.id ?? personAProfile.name),
+      ) ??
       activeProfile,
     [profiles, personBId, personAProfile, activeProfile],
   );
 
   const sajuResult = useMemo(() => calculateSaju(activeProfile), [activeProfile]);
-  const personAResult = useMemo(() => calculateSaju(personAProfile), [personAProfile]);
-  const personBResult = useMemo(() => calculateSaju(personBProfile), [personBProfile]);
+  const personAResult = useMemo(
+    () => calculateSaju(personAProfile),
+    [personAProfile],
+  );
+  const personBResult = useMemo(
+    () => calculateSaju(personBProfile),
+    [personBProfile],
+  );
   const compatibility = useMemo(
     () => calculateCompatibility(personAResult, personBResult),
     [personAResult, personBResult],
   );
+
+  const togglePillarOrder = useCallback(() => {
+    setPillarOrder((prev) =>
+      prev === 'traditional' ? 'modern' : 'traditional',
+    );
+  }, []);
+
+  const clearShareUrlParam = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('r')) {
+        url.searchParams.delete('r');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {
+      // Ignore history failure
+    }
+  }, []);
+
+  const startReading = useCallback(
+    (input: BirthInput) => {
+      const resolvedId = `user-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`;
+      const nextProfile: BirthInput = { ...input, id: resolvedId };
+      setProfiles((prev) => [nextProfile, ...prev]);
+      setActiveProfileId(resolvedId);
+      setPersonAId(resolvedId);
+      setHasUserSubmittedProfile(true);
+      setIsSharedView(false);
+      setChapter(0);
+      setStage('ritual');
+      clearShareUrlParam();
+    },
+    [clearShareUrlParam],
+  );
+
+  const claimOwnReading = useCallback(() => {
+    setIsSharedView(false);
+    clearShareUrlParam();
+    setStage('input');
+  }, [clearShareUrlParam]);
 
   const selectProfile = useCallback(
     (profileId: string) => {
@@ -216,13 +329,16 @@ export function SajuStoreProvider({ children }: { children: ReactNode }) {
         if (mode === 'edit' && input.id) {
           const exists = prev.some((p) => (p.id ?? p.name) === input.id);
           if (exists) {
-            return prev.map((p) => ((p.id ?? p.name) === input.id ? nextProfile : p));
+            return prev.map((p) =>
+              (p.id ?? p.name) === input.id ? nextProfile : p,
+            );
           }
         }
         return [nextProfile, ...prev];
       });
       setActiveProfileId(resolvedId);
       setPersonAId(resolvedId);
+      setHasUserSubmittedProfile(true);
       triggerCalculationPulse();
     },
     [triggerCalculationPulse],
@@ -262,7 +378,9 @@ export function SajuStoreProvider({ children }: { children: ReactNode }) {
       setProfiles((prev) => {
         const exists = prev.some((p) => (p.id ?? p.name) === customId);
         if (exists) {
-          return prev.map((p) => ((p.id ?? p.name) === customId ? nextProfile : p));
+          return prev.map((p) =>
+            (p.id ?? p.name) === customId ? nextProfile : p,
+          );
         }
         return [...prev, nextProfile];
       });
@@ -309,6 +427,18 @@ export function SajuStoreProvider({ children }: { children: ReactNode }) {
       birthInputModal,
       exportModalOpen,
       isCalculating,
+      stage,
+      chapter,
+      focusTopic,
+      isSharedView,
+      hasUserSubmittedProfile,
+      pillarOrder,
+      setStage,
+      setChapter,
+      setFocusTopic,
+      togglePillarOrder,
+      startReading,
+      claimOwnReading,
       setActiveTab,
       selectProfile,
       saveProfile,
@@ -334,6 +464,15 @@ export function SajuStoreProvider({ children }: { children: ReactNode }) {
       birthInputModal,
       exportModalOpen,
       isCalculating,
+      stage,
+      chapter,
+      focusTopic,
+      isSharedView,
+      hasUserSubmittedProfile,
+      pillarOrder,
+      togglePillarOrder,
+      startReading,
+      claimOwnReading,
       selectProfile,
       saveProfile,
       deleteProfile,

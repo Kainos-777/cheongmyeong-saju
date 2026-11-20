@@ -2,11 +2,11 @@
 [data-theme='obsidian'] {
   color-scheme: dark;
 
-  --bg-canvas: #0b0d12;
-  --bg-elevated: #12151e;
-  --surface-1: #161a24;
-  --surface-2: #1e2433;
-  --surface-glass: rgba(22, 26, 36, 0.72);
+  --bg-canvas: #07080d;
+  --bg-elevated: #0e111a;
+  --surface-1: #131724;
+  --surface-2: #1b2032;
+  --surface-glass: rgba(16, 20, 32, 0.78);
   --border-subtle: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.22);
 
@@ -14,8 +14,8 @@
   --text-secondary: #c6c1b6;
   --text-muted: #939aa8;
 
-  --accent-gold: #e3b963;
-  --accent-gold-soft: rgba(227, 185, 99, 0.16);
+  --accent-gold: #e5be6d;
+  --accent-gold-soft: rgba(229, 190, 109, 0.16);
 
   --color-wood: #38c988;
   --color-fire: #ff6b5b;

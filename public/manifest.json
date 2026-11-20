@@ -1,12 +1,12 @@
 {
-  "name": "청명 (淸明) — 사주 명리 & 모션 UX/UI 스튜디오",
-  "short_name": "청명 淸明",
-  "description": "정밀 천문 만세력 기반 사주팔자 분석 및 UX/UI 디자인·모션 스튜디오 PWA",
+  "name": "청명각 (淸明閣) — 서화가 읽어주는 무료 사주 이야기",
+  "short_name": "청명각 淸明",
+  "description": "로그인·결제 없이 월하 여도사 서화가 들려주는 무료 비주얼 노벨 사주 명리 & 궁합 PWA",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0b0d12",
-  "theme_color": "#0b0d12",
+  "background_color": "#07080d",
+  "theme_color": "#07080d",
   "lang": "ko",
   "icons": [
     {
