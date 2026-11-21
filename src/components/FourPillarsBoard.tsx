@@ -224,6 +224,16 @@ export function FourPillarsBoard({
             </strong>
           </div>
           <div>
+            <span style={{ color: 'var(--text-muted)' }}>출생지 </span>
+            <strong style={{ color: 'var(--text-primary)' }}>
+              {result.birthPlace.label}
+            </strong>
+            <span className="ml-1 font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              ({Math.abs(result.birthPlace.longitude).toFixed(1)}°
+              {result.birthPlace.longitude >= 0 ? 'E' : 'W'})
+            </span>
+          </div>
+          <div>
             <span style={{ color: 'var(--text-muted)' }}>보정시각 </span>
             <strong className="font-mono" style={{ color: 'var(--text-primary)' }}>
               {result.input.unknownTime ? '—' : result.adjustedTimeStr}

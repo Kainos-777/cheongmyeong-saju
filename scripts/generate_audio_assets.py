@@ -1,14 +1,15 @@
-"""Generate seamless 42s Korean night BGM and Seohwa neural voice MP3 assets."""
+"""Generate seamless 42s Korean night BGM and Seohwa human-like voice MP3 assets."""
 
-import asyncio
+import argparse
 import json
+import re
 import subprocess
 import wave
 from pathlib import Path
 
-import edge_tts
 import imageio_ffmpeg
 import numpy as np
+from supertonic import TTS
 
 SAMPLE_RATE = 44100
 LOOP_SECONDS = 42.0
@@ -20,9 +21,17 @@ VOICE_LINES_PATH = ROOT_DIR / "src" / "story" / "voiceLines.json"
 BGM_OUT_PATH = ROOT_DIR / "public" / "audio" / "cheongmyeong-bgm.mp3"
 VOICE_OUT_DIR = ROOT_DIR / "public" / "audio" / "voice"
 
-TTS_VOICE = "ko-KR-SunHiNeural"
-TTS_RATE = "-7%"
-TTS_PITCH = "-2Hz"
+SUPERTONIC_VOICE = "F5"
+SUPERTONIC_STEPS = 12
+SUPERTONIC_SPEED = 0.98
+
+VOCAL_MASTER_FILTER = (
+    "highpass=f=75,"
+    "equalizer=f=220:t=q:w=1.2:g=1.5,"
+    "equalizer=f=6500:t=q:w=1.5:g=-2.2,"
+    "lowpass=f=13500,"
+    "loudnorm=I=-16:TP=-1.5:LRA=11"
+)
 
 # D minor Korean pentatonic pitch dictionary (Hz)
 NOTES = {
@@ -420,35 +429,56 @@ def generate_night_bgm(out_mp3_path: Path) -> None:
         tmp_wav_path.unlink(missing_ok=True)
 
 
-async def synthesize_single_voice(
-    key: str,
-    text: str,
-    out_dir: Path,
-    semaphore: asyncio.Semaphore,
+def prepare_spoken_korean(raw: str) -> str:
+    """Normalize visual-novel punctuation so Supertonic speaks with natural human pacing."""
+    if not raw:
+        return ""
+    text = re.sub(
+        r"\(\s*[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\s·,\/\-]+\s*\)",
+        "",
+        raw,
+    )
+    text = text.replace("…", ", ").replace("...", ", ")
+    text = re.sub(r"\s*[·•・—–]+\s*", ", ", text)
+    text = re.sub(r"[「」『』<>【】★☆◆◇▶]", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r",\s*,+", ",", text)
+    text = re.sub(r"([?.!])\s*,", r"\1", text)
+    return text.strip()
+
+
+def encode_mastered_voice_mp3(
+    wav_path: Path,
+    mp3_path: Path,
+    ffmpeg_exe: str,
 ) -> None:
-    """Generate one Korean neural female voice MP3 via edge-tts with retry."""
-    out_path = out_dir / f"{key}.mp3"
-    async with semaphore:
-        last_err: Exception | None = None
-        for attempt in range(3):
-            try:
-                comm = edge_tts.Communicate(
-                    text,
-                    voice=TTS_VOICE,
-                    rate=TTS_RATE,
-                    pitch=TTS_PITCH,
-                )
-                await comm.save(str(out_path))
-                if out_path.exists() and out_path.stat().st_size > 1024:
-                    return
-            except Exception as exc:  # noqa: BLE001
-                last_err = exc
-                await asyncio.sleep(0.8 * (attempt + 1))
-        raise RuntimeError(f"Failed TTS for '{key}': {last_err}")
+    """Apply gentle studio vocal warmth EQ & loudness normalization and encode MP3."""
+    subprocess.run(
+        [
+            ffmpeg_exe,
+            "-y",
+            "-i",
+            str(wav_path),
+            "-af",
+            VOCAL_MASTER_FILTER,
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            "-ar",
+            str(SAMPLE_RATE),
+            "-ac",
+            "2",
+            str(mp3_path),
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 
-async def generate_all_voices() -> None:
-    """Read src/story/voiceLines.json and generate all 12 voice MP3 files."""
+def generate_all_voices() -> None:
+    """Read src/story/voiceLines.json and synthesize all Seohwa MP3s with Supertonic F5."""
     if not VOICE_LINES_PATH.exists():
         raise FileNotFoundError(f"Missing voice script JSON: {VOICE_LINES_PATH}")
 
@@ -457,21 +487,48 @@ async def generate_all_voices() -> None:
     )
     VOICE_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    semaphore = asyncio.Semaphore(3)
-    tasks = [
-        synthesize_single_voice(key, text, VOICE_OUT_DIR, semaphore)
-        for key, text in voice_lines.items()
-    ]
-    await asyncio.gather(*tasks)
+    tts = TTS(auto_download=True)
+    style = tts.get_voice_style(voice_name=SUPERTONIC_VOICE)
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
+    for idx, (key, raw_text) in enumerate(voice_lines.items(), start=1):
+        spoken = prepare_spoken_korean(raw_text)
+        out_path = VOICE_OUT_DIR / f"{key}.mp3"
+        tmp_wav = VOICE_OUT_DIR / f"{key}.tmp.wav"
+        try:
+            wav, duration = tts.synthesize(
+                text=spoken,
+                voice_style=style,
+                lang="ko",
+                total_steps=SUPERTONIC_STEPS,
+                speed=SUPERTONIC_SPEED,
+            )
+            tts.save_audio(wav, str(tmp_wav))
+            encode_mastered_voice_mp3(tmp_wav, out_path, ffmpeg_exe)
+            if not out_path.exists() or out_path.stat().st_size <= 1024:
+                raise RuntimeError(f"Generated empty MP3 for '{key}'")
+            dur_val = float(duration[0]) if hasattr(duration, "__len__") else float(duration)
+            print(f"[audio] ({idx}/{len(voice_lines)}) {key}.mp3 -> {dur_val:.2f}s ({out_path.stat().st_size} B)")
+        finally:
+            tmp_wav.unlink(missing_ok=True)
 
 
 def main() -> None:
-    print("[audio] Synthesizing 42s seamless Korean night BGM...")
-    generate_night_bgm(BGM_OUT_PATH)
-    print(f"[audio] BGM ready: {BGM_OUT_PATH} ({BGM_OUT_PATH.stat().st_size} bytes)")
+    parser = argparse.ArgumentParser(description="Generate Cheongmyeong BGM and Seohwa voice assets.")
+    parser.add_argument(
+        "--voices-only",
+        action="store_true",
+        help="Only regenerate Seohwa voice MP3s without rebuilding the 42s BGM.",
+    )
+    args = parser.parse_args()
 
-    print("[audio] Synthesizing 12 Seohwa Korean neural voice MP3s...")
-    asyncio.run(generate_all_voices())
+    if not args.voices_only:
+        print("[audio] Synthesizing 42s seamless Korean night BGM...")
+        generate_night_bgm(BGM_OUT_PATH)
+        print(f"[audio] BGM ready: {BGM_OUT_PATH} ({BGM_OUT_PATH.stat().st_size} bytes)")
+
+    print(f"[audio] Synthesizing Seohwa human-like voice MP3s via Supertonic ({SUPERTONIC_VOICE})...")
+    generate_all_voices()
     mp3s = sorted(VOICE_OUT_DIR.glob("*.mp3"))
     print(f"[audio] Generated {len(mp3s)} voice MP3s in {VOICE_OUT_DIR}")
 

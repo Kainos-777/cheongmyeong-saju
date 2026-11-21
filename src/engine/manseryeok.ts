@@ -8,7 +8,8 @@ import {
   calculateStrength,
   calculateYongshin,
 } from './analysis';
-import { BIRTH_CITIES, SOLAR_TERM_INDEX, STEMS } from './constants';
+import { resolveBirthLocation } from './birthPlace';
+import { SOLAR_TERM_INDEX, STEMS } from './constants';
 import {
   calculateDaewoon,
   calculateDailyFortune,
@@ -32,7 +33,7 @@ export function calculateSaju(
   input: BirthInput,
   referenceDate: Date = new Date()
 ): SajuResult {
-  const city = BIRTH_CITIES.find((c) => c.id === input.cityId) ?? BIRTH_CITIES[0];
+  const resolvedPlace = resolveBirthLocation(input);
 
   // 1. Resolve solar & lunar calendar dates
   const solar =
@@ -61,8 +62,8 @@ export function calculateSaju(
       hour: wallHour,
       minute: wallMinute,
     },
-    city.longitude,
-    city.utcOffsetMinutes,
+    resolvedPlace.longitude,
+    resolvedPlace.utcOffsetMinutes,
     input.useTrueSolarTime,
     input.useEquationOfTime ?? false
   );
@@ -189,6 +190,7 @@ export function calculateSaju(
 
   return {
     input,
+    birthPlace: resolvedPlace,
     solarDate: {
       year: solar.year,
       month: solar.month,

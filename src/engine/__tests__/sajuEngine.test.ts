@@ -16,6 +16,7 @@ import {
   jdToJde,
   dateToJd,
   lunarToSolar,
+  resolveBirthPlaceText,
   solarLongitudeDeg,
   solarToLunar,
 } from '../index';
@@ -311,5 +312,78 @@ describe('Manseryeok Saju Engine', () => {
     expect(daily.score).toBeGreaterThanOrEqual(35);
     expect(daily.score).toBeLessThanOrEqual(96);
     expect(daily.headline.length).toBeGreaterThan(5);
+  });
+
+  it('resolves free-text Korean & global birth regions accurately', () => {
+    const gangneung = resolveBirthPlaceText('강원도 강릉시');
+    expect(gangneung.matched).toBe(true);
+    expect(gangneung.cityId).toBe('gangneung');
+    expect(gangneung.label).toBe('강원도 강릉시');
+    expect(gangneung.longitude).toBeCloseTo(128.876, 2);
+
+    expect(resolveBirthPlaceText('전북 전주시 완산구').cityId).toBe('jeonju');
+    expect(resolveBirthPlaceText('제주 서귀포시').cityId).toBe('seogwipo');
+    expect(resolveBirthPlaceText('부산 해운대구').cityId).toBe('busan');
+    expect(resolveBirthPlaceText('경기도 성남시 분당구').cityId).toBe('seongnam');
+    expect(resolveBirthPlaceText('경기도 광주시').cityId).toBe('gyeonggi_gwangju');
+
+    const newYork = resolveBirthPlaceText('뉴욕');
+    expect(newYork.cityId).toBe('new_york');
+    expect(newYork.longitude).toBeCloseTo(-74.006, 2);
+
+    const tokyo = resolveBirthPlaceText('도쿄');
+    expect(tokyo.cityId).toBe('tokyo');
+    expect(tokyo.longitude).toBeCloseTo(139.692, 2);
+  });
+
+  it('uses entered birth region to compute True Solar Time and shift boundary Hour Pillars', () => {
+    const tokyo = calculateSaju(
+      makeInput({
+        year: 2000,
+        month: 1,
+        day: 1,
+        hour: 13,
+        minute: 20,
+        cityId: 'tokyo',
+        birthPlace: '도쿄',
+        useTrueSolarTime: true,
+      })
+    );
+    expect(tokyo.birthPlace.label).toBe('도쿄');
+    expect(tokyo.trueSolarTimeOffsetMin).toBe(19);
+    expect(tokyo.adjustedTimeStr).toBe('13:39');
+    expect(tokyo.pillars.hour.branch.hangul).toBe('미');
+
+    const incheon = calculateSaju(
+      makeInput({
+        year: 2000,
+        month: 1,
+        day: 1,
+        hour: 13,
+        minute: 20,
+        cityId: 'incheon',
+        birthPlace: '인천',
+        useTrueSolarTime: true,
+      })
+    );
+    expect(incheon.birthPlace.label).toBe('인천');
+    expect(incheon.trueSolarTimeOffsetMin).toBe(-33);
+    expect(incheon.adjustedTimeStr).toBe('12:47');
+    expect(incheon.pillars.hour.branch.hangul).toBe('오');
+
+    const gangneungNoon = calculateSaju(
+      makeInput({
+        year: 2000,
+        month: 1,
+        day: 1,
+        hour: 12,
+        minute: 0,
+        cityId: 'gangneung',
+        birthPlace: '강원도 강릉시',
+        useTrueSolarTime: true,
+      })
+    );
+    expect(gangneungNoon.trueSolarTimeOffsetMin).toBe(-24);
+    expect(gangneungNoon.adjustedTimeStr).toBe('11:36');
   });
 });

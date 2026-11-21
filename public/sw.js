@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cheongmyeong-v3';
+const CACHE_NAME = 'cheongmyeong-v4';
 const PRECACHE_URLS = ['/', '/index.html', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

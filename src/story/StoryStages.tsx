@@ -7,19 +7,33 @@ import {
   Clock,
   Compass,
   FastForward,
+  Globe,
   History,
   MapPin,
+  Search,
   Sparkles,
   UserRound,
 } from 'lucide-react';
 import { useMediaAudio } from '../audio/mediaAudioEngine';
-import { BIRTH_CITIES, PRESET_PROFILES } from '../engine';
+import {
+  BIRTH_CITIES,
+  POPULAR_BIRTH_PLACES,
+  PRESET_PROFILES,
+  computeTrueSolarOffsetMinutes,
+  formatLongitudeKo,
+  formatUtcOffsetKo,
+  resolveBirthLocation,
+  resolveBirthPlaceText,
+  searchBirthPlaceOnline,
+  suggestBirthPlaces,
+} from '../engine';
 import { KineticTypography, YinYangLoader } from '../motion';
 import type {
   BirthInput,
   CalendarType,
   Gender,
   JasiMode,
+  ResolvedBirthPlace,
 } from '../types/saju';
 import { SeohwaDialogueCard, SeohwaPortrait } from './SeohwaVisuals';
 import {
@@ -499,6 +513,29 @@ export function ConversationalInputStage({
     playChime,
   } = useMediaAudio();
 
+  const initialPlaceLabel =
+    initialValue?.birthPlace?.trim() ||
+    BIRTH_CITIES.find((c) => c.id === initialValue?.cityId)?.nameKo ||
+    '서울';
+
+  const [placeText, setPlaceText] = useState<string>(initialPlaceLabel);
+  const [selectedOnlinePlace, setSelectedOnlinePlace] =
+    useState<ResolvedBirthPlace | null>(null);
+  const [onlineResults, setOnlineResults] = useState<ResolvedBirthPlace[]>([]);
+  const [onlineStatusMsg, setOnlineStatusMsg] = useState<string>('');
+  const [searchingOnline, setSearchingOnline] = useState<boolean>(false);
+  const [placeFocused, setPlaceFocused] = useState<boolean>(false);
+  const [manualLongitudeStr, setManualLongitudeStr] = useState<string>(() =>
+    typeof initialValue?.birthLongitude === 'number'
+      ? String(initialValue.birthLongitude)
+      : '',
+  );
+  const [manualUtcOffsetHours, setManualUtcOffsetHours] = useState<number>(() =>
+    typeof initialValue?.birthUtcOffsetMinutes === 'number'
+      ? Math.round(initialValue.birthUtcOffsetMinutes / 60)
+      : 9,
+  );
+
   const [form, setForm] = useState<BirthInput>(() => ({
     name: initialValue?.name && !initialValue.id?.startsWith('preset-')
       ? initialValue.name
@@ -513,6 +550,9 @@ export function ConversationalInputStage({
     minute: initialValue?.minute ?? 30,
     unknownTime: Boolean(initialValue?.unknownTime),
     cityId: initialValue?.cityId ?? 'seoul',
+    birthPlace: initialPlaceLabel,
+    birthLongitude: initialValue?.birthLongitude,
+    birthUtcOffsetMinutes: initialValue?.birthUtcOffsetMinutes,
     useTrueSolarTime: initialValue?.useTrueSolarTime ?? true,
     useEquationOfTime: initialValue?.useEquationOfTime ?? false,
     jasiMode: initialValue?.jasiMode ?? 'yajasi',
@@ -557,15 +597,82 @@ export function ConversationalInputStage({
     form.minute,
   ).padStart(2, '0')}`;
 
-  const activeCity = useMemo(
-    () => BIRTH_CITIES.find((c) => c.id === form.cityId) ?? BIRTH_CITIES[0],
-    [form.cityId],
+  const resolvedPlace = useMemo<ResolvedBirthPlace>(() => {
+    const manualLon = Number(manualLongitudeStr.trim());
+    if (
+      manualLongitudeStr.trim() !== '' &&
+      Number.isFinite(manualLon) &&
+      manualLon >= -180 &&
+      manualLon <= 180
+    ) {
+      return resolveBirthLocation({
+        ...form,
+        birthPlace: placeText.trim() || '직접 지정 지역',
+        birthLongitude: manualLon,
+        birthUtcOffsetMinutes: manualUtcOffsetHours * 60,
+      });
+    }
+    if (selectedOnlinePlace) {
+      return selectedOnlinePlace;
+    }
+    return resolveBirthPlaceText(placeText);
+  }, [
+    form,
+    placeText,
+    selectedOnlinePlace,
+    manualLongitudeStr,
+    manualUtcOffsetHours,
+  ]);
+
+  const cityTstOffset = useMemo(
+    () =>
+      computeTrueSolarOffsetMinutes(
+        resolvedPlace.longitude,
+        resolvedPlace.utcOffsetMinutes,
+      ),
+    [resolvedPlace.longitude, resolvedPlace.utcOffsetMinutes],
   );
 
-  const cityTstOffset = useMemo(() => {
-    const stdMeridian = (activeCity.utcOffsetMinutes / 60) * 15;
-    return Math.round((activeCity.longitude - stdMeridian) * 4);
-  }, [activeCity]);
+  const placeSuggestions = useMemo(
+    () => suggestBirthPlaces(placeText, 8),
+    [placeText],
+  );
+
+  const handleSelectCatalogPlace = (label: string) => {
+    playTap();
+    setPlaceText(label);
+    setSelectedOnlinePlace(null);
+    setManualLongitudeStr('');
+    setOnlineResults([]);
+    setOnlineStatusMsg('');
+    setPlaceFocused(false);
+  };
+
+  const handleOnlinePlaceSearch = async () => {
+    const q = placeText.trim();
+    if (!q) return;
+    playTap();
+    setSearchingOnline(true);
+    setOnlineStatusMsg('');
+    try {
+      const results = await searchBirthPlaceOnline(q, 5);
+      setOnlineResults(results);
+      if (results.length > 0) {
+        setSelectedOnlinePlace(results[0]);
+        setManualLongitudeStr('');
+        setManualUtcOffsetHours(Math.round(results[0].utcOffsetMinutes / 60));
+        setOnlineStatusMsg(
+          `'${results[0].label}' 좌표를 바로 반영했어요. 다른 후보가 있으면 아래에서 골라 주세요.`,
+        );
+      } else {
+        setOnlineStatusMsg(
+          '온라인 검색 결과가 없거나 오프라인 상태예요. 아래 진태양시 정밀 옵션에서 경도(예: 128.88)를 직접 입력할 수도 있어요.',
+        );
+      }
+    } finally {
+      setSearchingOnline(false);
+    }
+  };
 
   const activeSijinKey = useMemo(() => {
     const total = form.hour * 60 + form.minute;
@@ -608,6 +715,10 @@ export function ConversationalInputStage({
       name: form.name.trim() || '밤의 여행자',
       year: Math.min(2100, Math.max(1900, Math.round(form.year || 2000))),
       day: Math.min(maxDay, Math.max(1, form.day)),
+      cityId: resolvedPlace.cityId,
+      birthPlace: resolvedPlace.label,
+      birthLongitude: resolvedPlace.longitude,
+      birthUtcOffsetMinutes: resolvedPlace.utcOffsetMinutes,
     });
   };
 
@@ -1063,6 +1174,259 @@ export function ConversationalInputStage({
               </div>
             </div>
 
+            {/* Free-Text Birth Region Input (promoted in Step 2) */}
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="story-birth-place"
+                  className="flex items-center gap-1.5 text-xs font-semibold"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <MapPin
+                    className="h-3.5 w-3.5"
+                    style={{ color: 'var(--accent-gold)' }}
+                  />
+                  태어난 곳 (국내 시·군·구 · 해외 도시 자유 입력)
+                </label>
+                <span
+                  className="text-[11px]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  국내 120+ · 세계 60+ 자동 매칭
+                </span>
+              </div>
+
+              <div className="relative">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="relative flex-1">
+                    <input
+                      id="story-birth-place"
+                      type="text"
+                      value={placeText}
+                      onFocus={() => setPlaceFocused(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => setPlaceFocused(false), 160);
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPlaceText(val);
+                        setSelectedOnlinePlace(null);
+                        setManualLongitudeStr('');
+                        setOnlineResults([]);
+                        setOnlineStatusMsg('');
+                      }}
+                      placeholder="예: 강원도 강릉시, 전주시 완산구, 제주 서귀포, 도쿄, 뉴욕..."
+                      className="min-h-[46px] w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-[var(--accent-gold)]"
+                      style={{
+                        backgroundColor: 'var(--surface-1)',
+                        borderColor: 'var(--border-subtle)',
+                        color: 'var(--text-primary)',
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleOnlinePlaceSearch}
+                    disabled={searchingOnline || !placeText.trim()}
+                    className="inline-flex min-h-[46px] shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors hover:opacity-95 disabled:opacity-50"
+                    style={{
+                      backgroundColor: 'var(--surface-2)',
+                      borderColor: 'rgba(229, 190, 109, 0.35)',
+                      color: 'var(--accent-gold)',
+                    }}
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                    <Search className="h-3 w-3" />
+                    <span>{searchingOnline ? '검색 중…' : '전 세계 주소 검색'}</span>
+                  </button>
+                </div>
+
+                {/* Live Autocomplete Suggestions Dropdown */}
+                {placeFocused &&
+                  placeText.trim().length > 0 &&
+                  placeSuggestions.length > 0 && (
+                    <div
+                      className="absolute right-0 left-0 z-30 mt-1.5 max-h-48 overflow-y-auto rounded-2xl border p-1.5 shadow-2xl"
+                      style={{
+                        backgroundColor: 'var(--bg-elevated)',
+                        borderColor: 'rgba(229, 190, 109, 0.32)',
+                      }}
+                    >
+                      {placeSuggestions.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSelectCatalogPlace(
+                              item.kind === 'city' &&
+                                item.regionLabel &&
+                                !item.regionLabel.endsWith('중심권')
+                                ? item.regionLabel
+                                : item.nameKo,
+                            );
+                          }}
+                          className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs transition-colors hover:bg-white/5"
+                        >
+                          <span
+                            className="font-semibold"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            {item.regionLabel}{' '}
+                            <span style={{ color: 'var(--text-muted)' }}>
+                              ({item.country})
+                            </span>
+                          </span>
+                          <span
+                            className="font-mono text-[11px]"
+                            style={{ color: 'var(--accent-gold)' }}
+                          >
+                            {formatLongitudeKo(item.longitude)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+              </div>
+
+              {/* Popular Quick Region Chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {POPULAR_BIRTH_PLACES.map((cityName) => {
+                  const active =
+                    resolvedPlace.matchedName === cityName &&
+                    placeText.trim().includes(cityName);
+                  return (
+                    <button
+                      key={cityName}
+                      type="button"
+                      onClick={() => handleSelectCatalogPlace(cityName)}
+                      className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        backgroundColor: active
+                          ? 'var(--accent-gold-soft)'
+                          : 'var(--surface-1)',
+                        borderColor: active
+                          ? 'rgba(229, 190, 109, 0.45)'
+                          : 'var(--border-subtle)',
+                        color: active
+                          ? 'var(--accent-gold)'
+                          : 'var(--text-secondary)',
+                      }}
+                    >
+                      {cityName}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Online Nominatim Candidates */}
+              {onlineResults.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {onlineResults.map((cand, idx) => (
+                    <button
+                      key={`${cand.cityId}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        playTap();
+                        setSelectedOnlinePlace(cand);
+                        setPlaceText(cand.label);
+                        setManualLongitudeStr('');
+                        setManualUtcOffsetHours(
+                          Math.round(cand.utcOffsetMinutes / 60),
+                        );
+                      }}
+                      className="rounded-xl border px-2.5 py-1.5 text-left text-[11px] transition-colors"
+                      style={{
+                        backgroundColor:
+                          selectedOnlinePlace?.label === cand.label
+                            ? 'var(--accent-gold-soft)'
+                            : 'var(--surface-2)',
+                        borderColor:
+                          selectedOnlinePlace?.label === cand.label
+                            ? 'var(--accent-gold)'
+                            : 'var(--border-subtle)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      🌐 {cand.label} ({formatLongitudeKo(cand.longitude)})
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {onlineStatusMsg && (
+                <p
+                  className="text-[11px] leading-relaxed"
+                  style={{ color: 'var(--accent-gold)' }}
+                >
+                  {onlineStatusMsg}
+                </p>
+              )}
+
+              {/* Live Astronomy & Regional Saju Reflection Box */}
+              <div
+                aria-label="출생지 천문 및 기운 반영 안내"
+                className="space-y-1.5 rounded-2xl border p-3.5 text-xs"
+                style={{
+                  backgroundColor: 'rgba(229, 190, 109, 0.06)',
+                  borderColor: 'rgba(229, 190, 109, 0.25)',
+                }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span
+                    className="font-bold"
+                    style={{ color: 'var(--accent-gold)' }}
+                  >
+                    📍 {resolvedPlace.label}
+                  </span>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{
+                      backgroundColor: resolvedPlace.matched
+                        ? 'rgba(56, 201, 136, 0.14)'
+                        : 'rgba(255, 255, 255, 0.08)',
+                      color: resolvedPlace.matched
+                        ? '#5eead4'
+                        : 'var(--text-secondary)',
+                    }}
+                  >
+                    {resolvedPlace.matched
+                      ? `${resolvedPlace.country} · 좌표 자동 반영`
+                      : '사용자 입력 · 아래 경도 직접 입력 가능'}
+                  </span>
+                </div>
+
+                <div
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px]"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <span>{formatLongitudeKo(resolvedPlace.longitude)}</span>
+                  <span>·</span>
+                  <span>
+                    {formatUtcOffsetKo(resolvedPlace.utcOffsetMinutes)}
+                  </span>
+                  <span>·</span>
+                  <span style={{ color: 'var(--accent-gold)' }}>
+                    진태양시{' '}
+                    {form.useTrueSolarTime
+                      ? `${cityTstOffset >= 0 ? `+${cityTstOffset}` : cityTstOffset}분 자동 보정`
+                      : '보정 OFF'}
+                  </span>
+                </div>
+
+                <p
+                  className="text-[11px] leading-relaxed"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <strong style={{ color: 'var(--accent-gold)' }}>
+                    {resolvedPlace.regionDirectionKo}
+                  </strong>{' '}
+                  — {resolvedPlace.regionNote}
+                </p>
+              </div>
+            </div>
+
             {/* Collapsible Precision Astronomy Options */}
             <div
               className="overflow-hidden rounded-2xl border"
@@ -1083,10 +1447,12 @@ export function ConversationalInputStage({
                     className="h-3.5 w-3.5 shrink-0"
                     style={{ color: 'var(--accent-gold)' }}
                   />
-                  <span>출생 도시 & 진태양시 정밀 옵션</span>
+                  <span>진태양시 · 야자시/조자시 · 경도 정밀 옵션</span>
                   <span className="font-normal" style={{ color: 'var(--text-muted)' }}>
-                    ({activeCity.nameKo} ·{' '}
-                    {form.useTrueSolarTime ? `${cityTstOffset}분 보정` : '보정 OFF'})
+                    ({resolvedPlace.label} ·{' '}
+                    {form.useTrueSolarTime
+                      ? `${cityTstOffset >= 0 ? `+${cityTstOffset}` : cityTstOffset}분 보정`
+                      : '보정 OFF'})
                   </span>
                 </span>
                 <ChevronDown
@@ -1111,37 +1477,70 @@ export function ConversationalInputStage({
                     }}
                   >
                     ☀️ <strong style={{ color: 'var(--accent-gold)' }}>진태양시란?</strong>{' '}
-                    한국 시계는 동경 135° 표준시를 써서 실제 태양이 머리 위에 뜨는 하늘 시간과 서울 기준 약 32분 차이가 나요. 태어난 도시의 진짜 태양 위치로 시주를 맞춰 더 정교하게 풀어드려요.
+                    한국 시계는 동경 135° 표준시를 써서 태어난 지역의 진짜 태양 위치와 시차가 생겨요. 위에서 적은 곳({resolvedPlace.label})의 경도({formatLongitudeKo(resolvedPlace.longitude)})에 맞춰 시주를 정교하게 보정해 드려요.
                   </p>
 
-                  <div>
-                    <label
-                      htmlFor="story-birth-city"
-                      className="mb-1 flex items-center gap-1.5 font-semibold"
-                      style={{ color: 'var(--text-secondary)' }}
-                    >
-                      <MapPin className="h-3.5 w-3.5" />
-                      출생 도시
-                    </label>
-                    <select
-                      id="story-birth-city"
-                      value={form.cityId}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, cityId: e.target.value }))
-                      }
-                      className="min-h-[40px] w-full rounded-xl border px-3 py-2 text-xs outline-none"
-                      style={{
-                        backgroundColor: 'var(--surface-2)',
-                        borderColor: 'var(--border-subtle)',
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      {BIRTH_CITIES.map((city) => (
-                        <option key={city.id} value={city.id}>
-                          {city.nameKo} ({city.country})
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="story-birth-longitude"
+                        className="mb-1 block font-semibold"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        경도 직접 미세 조정 (동경 +, 서경 −)
+                      </label>
+                      <input
+                        id="story-birth-longitude"
+                        type="number"
+                        step="0.01"
+                        min={-180}
+                        max={180}
+                        value={manualLongitudeStr}
+                        onChange={(e) => setManualLongitudeStr(e.target.value)}
+                        placeholder={`현재 ${resolvedPlace.longitude.toFixed(2)}°`}
+                        className="min-h-[38px] w-full rounded-xl border px-3 py-1.5 font-mono text-xs outline-none"
+                        style={{
+                          backgroundColor: 'var(--surface-2)',
+                          borderColor: 'var(--border-subtle)',
+                          color: 'var(--text-primary)',
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="story-birth-tz"
+                        className="mb-1 block font-semibold"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        표준 시간대 (UTC)
+                      </label>
+                      <input
+                        id="story-birth-tz"
+                        type="number"
+                        min={-12}
+                        max={14}
+                        value={
+                          manualLongitudeStr.trim() !== ''
+                            ? manualUtcOffsetHours
+                            : Math.round(resolvedPlace.utcOffsetMinutes / 60)
+                        }
+                        onChange={(e) => {
+                          const h = Number(e.target.value);
+                          if (Number.isFinite(h)) {
+                            setManualUtcOffsetHours(Math.min(14, Math.max(-12, h)));
+                            if (!manualLongitudeStr.trim()) {
+                              setManualLongitudeStr(String(resolvedPlace.longitude));
+                            }
+                          }
+                        }}
+                        className="min-h-[38px] w-full rounded-xl border px-3 py-1.5 font-mono text-xs outline-none"
+                        style={{
+                          backgroundColor: 'var(--surface-2)',
+                          borderColor: 'var(--border-subtle)',
+                          color: 'var(--text-primary)',
+                        }}
+                      />
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
@@ -1153,7 +1552,7 @@ export function ConversationalInputStage({
                         진태양시 보정
                       </div>
                       <div style={{ color: 'var(--text-muted)' }}>
-                        경도 시차 보정 ({activeCity.nameKo}{' '}
+                        경도 시차 보정 ({resolvedPlace.label}{' '}
                         {cityTstOffset >= 0 ? `+${cityTstOffset}` : cityTstOffset}분)
                       </div>
                     </div>

@@ -5,6 +5,7 @@ export const VOICE_STORAGE_KEY = 'cheongmyeong:voice:v2';
 
 const BGM_SRC = '/audio/cheongmyeong-bgm.mp3';
 const VOICE_DIR = '/audio/voice';
+const VOICE_ASSET_VERSION = '2';
 
 const BGM_NORMAL_VOLUME = 0.42;
 const BGM_DUCK_VOLUME = 0.14;
@@ -32,6 +33,7 @@ export interface SpeakClipOrTextOptions {
   voiceKey?: string;
   text: string;
   force?: boolean;
+  allowBrowserTts?: boolean;
 }
 
 function isBrowser(): boolean {
@@ -547,43 +549,47 @@ class MediaAudioEngine {
 
     if (opts.voiceKey) {
       const audio = this.ensureVoiceElement();
-      if (audio) {
-        let fellBack = false;
-        const triggerFallback = () => {
-          if (fellBack || token !== this.voiceToken) return;
-          fellBack = true;
-          audio.onended = null;
-          audio.onerror = null;
-          this.speakViaSpeechSynthesis(rawText, token);
+      if (!audio) {
+        this.setSpeaking(false);
+        return;
+      }
+
+      const cancelClip = () => {
+        if (token !== this.voiceToken) return;
+        audio.onended = null;
+        audio.onerror = null;
+        this.setSpeaking(false);
+      };
+
+      try {
+        audio.src = `${VOICE_DIR}/${encodeURIComponent(opts.voiceKey)}.mp3?v=${VOICE_ASSET_VERSION}`;
+        audio.volume = 0.96;
+        audio.onended = () => {
+          cancelClip();
+        };
+        audio.onerror = () => {
+          cancelClip();
         };
 
-        try {
-          audio.src = `${VOICE_DIR}/${encodeURIComponent(opts.voiceKey)}.mp3`;
-          audio.volume = 0.96;
-          audio.onended = () => {
-            if (token !== this.voiceToken) return;
-            this.setSpeaking(false);
-          };
-          audio.onerror = () => {
-            triggerFallback();
-          };
-
-          this.setSpeaking(true);
-          const playResult = audio.play?.();
-          if (playResult && typeof playResult.then === 'function') {
-            playResult.catch(() => {
-              triggerFallback();
-            });
-          }
-          return;
-        } catch {
-          triggerFallback();
-          return;
+        this.setSpeaking(true);
+        const playResult = audio.play?.();
+        if (playResult && typeof playResult.then === 'function') {
+          playResult.catch(() => {
+            cancelClip();
+          });
         }
+      } catch {
+        cancelClip();
       }
+      return;
     }
 
-    this.speakViaSpeechSynthesis(rawText, token);
+    if (opts.allowBrowserTts === true) {
+      this.speakViaSpeechSynthesis(rawText, token);
+      return;
+    }
+
+    this.setSpeaking(false);
   };
 
   private speakViaSpeechSynthesis(rawText: string, token: number): void {
@@ -621,8 +627,8 @@ class MediaAudioEngine {
         utterance.lang = 'ko-KR';
       }
 
-      utterance.rate = 0.94;
-      utterance.pitch = 1.04;
+      utterance.rate = 0.96;
+      utterance.pitch = 1.0;
       utterance.volume = 0.95;
 
       utterance.onstart = () => {

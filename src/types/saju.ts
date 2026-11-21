@@ -13,6 +13,21 @@ export interface BirthCity {
   utcOffsetMinutes: number;
 }
 
+export interface ResolvedBirthPlace {
+  cityId: string;
+  label: string;
+  matchedName: string;
+  country: string;
+  longitude: number;
+  latitude?: number;
+  utcOffsetMinutes: number;
+  matched: boolean;
+  source: 'preset' | 'gazetteer' | 'online' | 'custom' | 'fallback';
+  regionElement: ElementKey;
+  regionDirectionKo: string;
+  regionNote: string;
+}
+
 export interface BirthInput {
   id?: string;
   name: string;
@@ -26,6 +41,9 @@ export interface BirthInput {
   minute: number;
   unknownTime?: boolean;
   cityId: string;
+  birthPlace?: string;
+  birthLongitude?: number;
+  birthUtcOffsetMinutes?: number;
   useTrueSolarTime: boolean;
   useEquationOfTime?: boolean;
   jasiMode: JasiMode;
@@ -186,6 +204,7 @@ export interface SajuInterpretation {
 
 export interface SajuResult {
   input: BirthInput;
+  birthPlace: ResolvedBirthPlace;
   solarDate: {
     year: number;
     month: number;

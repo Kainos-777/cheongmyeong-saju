@@ -77,6 +77,9 @@ interface CompactPayload {
   mi: number;
   u?: 1;
   ct: string;
+  bp?: string;
+  lon?: number;
+  tz?: number;
   tst: 0 | 1;
   eot?: 0 | 1;
   j: 'y' | 'j';
@@ -143,6 +146,21 @@ export function encodeSharePayload(
     j: input.jasiMode === 'jojasi' ? 'j' : 'y',
     ft: focusTopic,
   };
+  if (input.birthPlace && input.birthPlace.trim().length > 0) {
+    compact.bp = input.birthPlace.trim().slice(0, 48);
+  }
+  if (
+    typeof input.birthLongitude === 'number' &&
+    Number.isFinite(input.birthLongitude)
+  ) {
+    compact.lon = Number(input.birthLongitude.toFixed(3));
+  }
+  if (
+    typeof input.birthUtcOffsetMinutes === 'number' &&
+    Number.isFinite(input.birthUtcOffsetMinutes)
+  ) {
+    compact.tz = Math.round(input.birthUtcOffsetMinutes);
+  }
   if (input.isLeapMonth) compact.lp = 1;
   if (input.unknownTime) compact.u = 1;
   if (input.useEquationOfTime !== undefined) {
@@ -189,6 +207,25 @@ export function decodeSharePayload(token: string): SharedPayload | null {
     const focusTopic =
       parsed.ft && validFocus.includes(parsed.ft) ? parsed.ft : 'roast';
 
+    const birthPlace =
+      typeof parsed.bp === 'string' && parsed.bp.trim().length > 0
+        ? parsed.bp.trim().slice(0, 48)
+        : undefined;
+    const birthLongitude =
+      typeof parsed.lon === 'number' &&
+      Number.isFinite(parsed.lon) &&
+      parsed.lon >= -180 &&
+      parsed.lon <= 180
+        ? parsed.lon
+        : undefined;
+    const birthUtcOffsetMinutes =
+      typeof parsed.tz === 'number' &&
+      Number.isFinite(parsed.tz) &&
+      parsed.tz >= -720 &&
+      parsed.tz <= 840
+        ? Math.round(parsed.tz)
+        : undefined;
+
     const input: BirthInput = {
       id: `shared-${token.slice(0, 10)}`,
       name:
@@ -205,6 +242,9 @@ export function decodeSharePayload(token: string): SharedPayload | null {
       minute: Math.round(parsed.mi),
       unknownTime: parsed.u === 1,
       cityId: typeof parsed.ct === 'string' && parsed.ct ? parsed.ct : 'seoul',
+      birthPlace,
+      birthLongitude,
+      birthUtcOffsetMinutes,
       useTrueSolarTime: parsed.tst !== 0,
       useEquationOfTime: parsed.eot === 1,
       jasiMode: parsed.j === 'j' ? 'jojasi' : 'yajasi',
@@ -787,22 +827,31 @@ export function buildChapterScripts(
           ? result.interpretation.careerDesignStyle
           : result.interpretation.growthChallenges[0] ?? result.interpretation.coreSummary;
 
+  const placeLonStr =
+    result.birthPlace.longitude >= 0
+      ? `동경 ${result.birthPlace.longitude.toFixed(1)}°`
+      : `서경 ${Math.abs(result.birthPlace.longitude).toFixed(1)}°`;
+  const placeTstPhrase =
+    result.input.useTrueSolarTime && !result.input.unknownTime
+      ? `진태양시 ${result.trueSolarTimeOffsetMin >= 0 ? `+${result.trueSolarTimeOffsetMin}` : result.trueSolarTimeOffsetMin}분까지 딱 맞춰서`
+      : '기준 시각으로';
+
   const chapters: ChapterScript[] = [
     {
       chapter: 0,
       navLabel: '1장 팩폭',
       title: '1장 · 타고난 기질 순살 팩폭',
-      subtitle: `${iljuHangul}(${iljuHanja}) · ${result.gyeokguk.name}`,
+      subtitle: `${iljuHangul}(${iljuHanja}) · ${result.gyeokguk.name} · ${result.birthPlace.label}`,
       expression: 'smirk',
       moodLabel: '촌철살인 팩폭 타임',
       headline: `${name}님은 '${result.interpretation.iljuTitle}'의 기운을 타고났어`,
-      dialogue: `${focusHook} 네 본캐를 결정하는 일주가 ${iljuHangul}(${iljuHanja}), 타고난 본질 원소(일간)는 ${dmKo}이네. 겉으론 ${result.interpretation.archetype}처럼 보여도 속마음은 꽤 다를걸? 근데 이건 시작일 뿐이야… 아래 팩폭 읽고 다음 장에서 속마음 카드까지 뒤집어 봐.`,
+      dialogue: `${focusHook} ${result.birthPlace.label}(${placeLonStr}) 하늘을 ${placeTstPhrase} 계산해 보니, 네 본캐 일주는 ${iljuHangul}(${iljuHanja}), 타고난 원소(일간)는 ${dmKo}이네. 게다가 ${result.birthPlace.regionDirectionKo} 터전 기운까지 살짝 얹혀 있어. 겉으론 ${result.interpretation.archetype}처럼 보여도 속마음은 꽤 다를걸? 아래 팩폭 읽고 다음 장 카드까지 뒤집어 봐.`,
       secretTease: `잠깐… ${name}님 사주에서 남들한텐 절대 안 보여주는 '진짜 약한 구석' 하나만 더 들춰볼까? 좀 찔릴 수도 있는데… 열어볼래?`,
       secretReveal: `다 들킬 각오 됐어? ${name}님 일주 아랫자리 땅속(지장간) 깊숙한 곳엔 ${
         deepestHidden
           ? `'${deepestHidden.hangul}(${deepestHidden.tenGod})'`
           : dmKo
-      } 기운이 숨어 있어. 그래서 겉으론 안 그런 척해도 속으론 "${focusSecretBonus}" 같은 결로 마음이 먼저 움직이곤 해. 혼자 너무 끙끙대지 마, 네가 예민한 게 아니라 촉이 살아 있는 거니까.`,
+      } 기운이 숨어 있어. 여기에 태어난 곳(${result.birthPlace.label})의 결을 더하면—${result.birthPlace.regionNote} 그래서 겉으론 안 그런 척해도 속으론 "${focusSecretBonus}" 같은 결로 마음이 먼저 움직이곤 해. 혼자 너무 끙끙대지 마.`,
     },
     {
       chapter: 1,
@@ -812,7 +861,7 @@ export function buildChapterScripts(
       expression: 'mystic',
       moodLabel: '천문 명식 해부',
       headline: '카드를 뒤집으면 겉표정 아래 숨겨진 진짜 속마음까지 다 보여',
-      dialogue: `아래 4개 기둥 카드를 하나씩 눌러서 뒤집어 봐. 겉에 적힌 글자 말고도 땅속에 숨은 '진짜 속마음(지장간)'이 숨어 있거든. 에너지 스탯(오행)을 보면 ${domKo} 기운이 제일 세고, 지금 막힌 흐름을 뚫어주는 치트키 원소(용신)는 단연 ${yongKo}이야.`,
+      dialogue: `아래 4개 기둥 카드를 하나씩 눌러서 뒤집어 봐. ${result.birthPlace.label} 기준 보정 시각(${result.adjustedTimeStr})으로 세운 시주와 땅속에 숨은 '진짜 속마음(지장간)'이 다 드러나 있거든. 에너지 스탯(오행)을 보면 ${domKo} 기운이 제일 세고, 지금 막힌 흐름을 뚫어주는 치트키 원소(용신)는 단연 ${yongKo}이야.`,
       secretTease:
         '있잖아… 여덟 글자가 서로 부딪히거나 끌어당기며 만드는 "은밀한 기운 충돌 지점"이 보이는데… 몰래 확인해 볼래?',
       secretReveal: `${
@@ -953,7 +1002,7 @@ export function generateViralStoryCardSvg(
   const userName = escapeXml(result.input.name || '무명');
   const iljuTitle = escapeXml(result.interpretation.iljuTitle);
   const archetype = escapeXml(
-    `${result.interpretation.archetype} · ${result.interpretation.iljuAnimal}`,
+    `${result.interpretation.archetype} · ${result.interpretation.iljuAnimal} · ${result.birthPlace.label}`,
   );
   const quoteLines = wrapLines(quoteLine, 26, 2);
   const highlightRoast = wrapLines(

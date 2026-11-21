@@ -1,4 +1,5 @@
 export * from './constants';
+export * from './birthPlace';
 export * from './lunarTable';
 export * from './solarTerms';
 export * from './manseryeok';

@@ -122,7 +122,7 @@ describe('Story Renewal Core (Share Codec, Seohwa Script, 9:16 Card)', () => {
     expect(svg).toContain('청명각');
   });
 
-  it('provides all 12 non-empty voiceLines keys aligned with INTRO_BEATS & FOCUS_TOPIC_META', () => {
+  it('provides all 25 non-empty voiceLines keys aligned with INTRO_BEATS & FOCUS_TOPIC_META', () => {
     const expectedKeys = [
       'landing-tease',
       'beat-1',
@@ -136,6 +136,19 @@ describe('Story Renewal Core (Share Codec, Seohwa Script, 9:16 Card)', () => {
       'input-1',
       'input-2',
       'ritual-1',
+      'ch0-wood',
+      'ch0-fire',
+      'ch0-earth',
+      'ch0-metal',
+      'ch0-water',
+      'ch1-pillars',
+      'ch2-daewoon',
+      'ch3-compat',
+      'ch4-share',
+      'secret-0',
+      'secret-1',
+      'secret-2',
+      'secret-3',
     ] as const;
 
     expect(Object.keys(voiceLines).sort()).toEqual([...expectedKeys].sort());
@@ -156,6 +169,39 @@ describe('Story Renewal Core (Share Codec, Seohwa Script, 9:16 Card)', () => {
       expect(FOCUS_TOPIC_META[topic].voiceKey).toBe(expectedKey);
       expect(FOCUS_TOPIC_META[topic].seohwaReply).toBe(voiceLines[expectedKey]);
     });
+  });
+
+  it('preserves free-text birthPlace, longitude, and UTC offset in ?r= share links', () => {
+    const customInput: BirthInput = {
+      name: '강릉여행자',
+      gender: 'female',
+      calendarType: 'solar',
+      year: 2000,
+      month: 1,
+      day: 1,
+      hour: 12,
+      minute: 0,
+      cityId: 'gangneung',
+      birthPlace: '강원도 강릉시',
+      birthLongitude: 128.876,
+      birthUtcOffsetMinutes: 540,
+      useTrueSolarTime: true,
+      jasiMode: 'yajasi',
+    };
+
+    const token = encodeSharePayload(customInput, 'roast');
+    const decoded = decodeSharePayload(token);
+
+    expect(decoded).not.toBeNull();
+    expect(decoded?.input.birthPlace).toBe('강원도 강릉시');
+    expect(decoded?.input.birthLongitude).toBeCloseTo(128.876, 3);
+    expect(decoded?.input.birthUtcOffsetMinutes).toBe(540);
+
+    const saju = calculateSaju(decoded!.input);
+    expect(saju.birthPlace.label).toBe('강원도 강릉시');
+    expect(saju.trueSolarTimeOffsetMin).toBe(-24);
+    const { chapters } = buildChapterScripts(saju, 'roast');
+    expect(chapters[0].dialogue).toContain('강원도 강릉시');
   });
 
   it('exports >= 8 beginner-friendly SAJU_PLAIN_GLOSSARY entries and 5 chapter cliffhanger secrets', () => {

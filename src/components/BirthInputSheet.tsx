@@ -9,6 +9,12 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
+import {
+  BIRTH_PLACE_CATALOG,
+  computeTrueSolarOffsetMinutes,
+  formatLongitudeKo,
+  resolveBirthPlaceText,
+} from '../engine';
 import type { BirthCity, BirthInput, CalendarType, Gender, JasiMode } from '../types/saju';
 import { matchSijinKey, pad2, SIJIN_OPTIONS } from './elementUtils';
 
@@ -34,6 +40,7 @@ const DEFAULT_INPUT: BirthInput = {
   minute: 30,
   unknownTime: false,
   cityId: 'seoul',
+  birthPlace: '서울',
   useTrueSolarTime: true,
   useEquationOfTime: false,
   jasiMode: 'yajasi',
@@ -56,17 +63,29 @@ export function BirthInputSheet({
     ...DEFAULT_INPUT,
     ...initialValue,
   }));
+  const [placeText, setPlaceText] = useState<string>(
+    () =>
+      initialValue?.birthPlace?.trim() ||
+      cities.find((c) => c.id === initialValue?.cityId)?.nameKo ||
+      '서울',
+  );
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       const base = initialValue ?? DEFAULT_INPUT;
+      const initialLabel =
+        base.birthPlace?.trim() ||
+        cities.find((c) => c.id === base.cityId)?.nameKo ||
+        '서울';
       setForm({
         ...DEFAULT_INPUT,
         ...base,
         cityId: base.cityId || cities[0]?.id || 'seoul',
+        birthPlace: initialLabel,
       });
+      setPlaceText(initialLabel);
       setAppliedPresetName(null);
     }
   }, [open, initialValue, cities]);
@@ -85,15 +104,19 @@ export function BirthInputSheet({
     };
   }, [open, onClose]);
 
-  const selectedCity = useMemo(() => {
-    return cities.find((c) => c.id === form.cityId) ?? cities[0];
-  }, [cities, form.cityId]);
+  const resolvedPlace = useMemo(
+    () => resolveBirthPlaceText(placeText),
+    [placeText],
+  );
 
-  const solarOffsetMin = useMemo(() => {
-    if (!selectedCity) return -32;
-    const stdMeridian = (selectedCity.utcOffsetMinutes / 60) * 15;
-    return Math.round((selectedCity.longitude - stdMeridian) * 4);
-  }, [selectedCity]);
+  const solarOffsetMin = useMemo(
+    () =>
+      computeTrueSolarOffsetMinutes(
+        resolvedPlace.longitude,
+        resolvedPlace.utcOffsetMinutes,
+      ),
+    [resolvedPlace.longitude, resolvedPlace.utcOffsetMinutes],
+  );
 
   const maxDay = useMemo(() => {
     if (form.calendarType === 'lunar') return 30;
@@ -104,11 +127,17 @@ export function BirthInputSheet({
   const activeSijinKey = useMemo(() => matchSijinKey(form.hour), [form.hour]);
 
   const handleApplyPreset = (preset: BirthInput) => {
+    const presetLabel =
+      preset.birthPlace?.trim() ||
+      cities.find((c) => c.id === preset.cityId)?.nameKo ||
+      '서울';
     setForm({
       ...DEFAULT_INPUT,
       ...preset,
       id: mode === 'edit' ? form.id : undefined,
+      birthPlace: presetLabel,
     });
+    setPlaceText(presetLabel);
     setAppliedPresetName(preset.name);
   };
 
@@ -142,6 +171,10 @@ export function BirthInputSheet({
       isLeapMonth: form.calendarType === 'lunar' ? Boolean(form.isLeapMonth) : false,
       hour: form.unknownTime ? 12 : Math.min(23, Math.max(0, form.hour)),
       minute: form.unknownTime ? 0 : Math.min(59, Math.max(0, form.minute)),
+      cityId: resolvedPlace.cityId,
+      birthPlace: resolvedPlace.label,
+      birthLongitude: resolvedPlace.longitude,
+      birthUtcOffsetMinutes: resolvedPlace.utcOffsetMinutes,
     });
     onClose();
   };
@@ -628,7 +661,7 @@ export function BirthInputSheet({
                 </div>
               </div>
 
-              {/* Birth City + Live True Solar Time Preview */}
+              {/* Free-Text Birth Region + Live True Solar Time Preview */}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label
@@ -637,48 +670,59 @@ export function BirthInputSheet({
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     <MapPin className="h-3.5 w-3.5" />
-                    출생 지역 (경도 기반 진태양시)
+                    출생 지역 (자유 입력 · 경도 기반 진태양시)
                   </label>
 
-                  {selectedCity && (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium"
-                      style={{
-                        backgroundColor: form.useTrueSolarTime
-                          ? 'var(--accent-gold-soft)'
-                          : 'var(--surface-1)',
-                        border: '1px solid var(--border-subtle)',
-                        color: form.useTrueSolarTime
-                          ? 'var(--accent-gold)'
-                          : 'var(--text-muted)',
-                      }}
-                    >
-                      {selectedCity.nameKo} {Math.abs(selectedCity.longitude).toFixed(2)}°
-                      {selectedCity.longitude >= 0 ? 'E' : 'W'} ·{' '}
-                      {solarOffsetMin >= 0 ? `+${solarOffsetMin}` : solarOffsetMin}분
-                      {!form.useTrueSolarTime && ' (미적용)'}
-                    </span>
-                  )}
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium"
+                    style={{
+                      backgroundColor: form.useTrueSolarTime
+                        ? 'var(--accent-gold-soft)'
+                        : 'var(--surface-1)',
+                      border: '1px solid var(--border-subtle)',
+                      color: form.useTrueSolarTime
+                        ? 'var(--accent-gold)'
+                        : 'var(--text-muted)',
+                    }}
+                  >
+                    {resolvedPlace.label} ({formatLongitudeKo(resolvedPlace.longitude)}) ·{' '}
+                    {solarOffsetMin >= 0 ? `+${solarOffsetMin}` : solarOffsetMin}분
+                    {!form.useTrueSolarTime && ' (미적용)'}
+                  </span>
                 </div>
 
-                <select
+                <input
                   id="birth-city"
-                  value={form.cityId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, cityId: e.target.value }))}
+                  type="text"
+                  list="sheet-birth-place-list"
+                  value={placeText}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPlaceText(next);
+                    const resolved = resolveBirthPlaceText(next);
+                    setForm((prev) => ({
+                      ...prev,
+                      cityId: resolved.cityId,
+                      birthPlace: next.trim() || resolved.label,
+                    }));
+                  }}
+                  placeholder="국내 시·군·구 또는 해외 도시 자유 입력 (예: 강릉, 대전 유성구, 도쿄)"
                   className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none"
                   style={{
                     backgroundColor: 'var(--surface-1)',
                     border: '1px solid var(--border-subtle)',
                     color: 'var(--text-primary)',
                   }}
-                >
-                  {cities.map((city) => (
-                    <option key={city.id} value={city.id}>
-                      {city.nameKo} ({city.country}) · {Math.abs(city.longitude).toFixed(2)}°
-                      {city.longitude >= 0 ? 'E' : 'W'}
-                    </option>
-                  ))}
-                </select>
+                />
+                <datalist id="sheet-birth-place-list">
+                  {BIRTH_PLACE_CATALOG.filter((p) => p.kind !== 'province')
+                    .slice(0, 60)
+                    .map((p) => (
+                      <option key={p.id} value={p.nameKo}>
+                        {p.regionLabel} ({p.country})
+                      </option>
+                    ))}
+                </datalist>
               </div>
 
               {/* Expandable Advanced Astronomy Options */}

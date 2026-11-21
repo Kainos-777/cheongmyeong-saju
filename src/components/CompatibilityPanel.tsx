@@ -8,6 +8,13 @@ import {
   TriangleAlert,
   UserRound,
 } from 'lucide-react';
+import {
+  BIRTH_CITIES,
+  BIRTH_PLACE_CATALOG,
+  computeTrueSolarOffsetMinutes,
+  formatLongitudeKo,
+  resolveBirthPlaceText,
+} from '../engine';
 import type { BirthCity, BirthInput, CompatibilityResult, Gender } from '../types/saju';
 import {
   ELEMENT_META,
@@ -50,7 +57,19 @@ function QuickInlineEditor({
   const [month, setMonth] = useState(initial.month);
   const [day, setDay] = useState(initial.day);
   const [hour, setHour] = useState(initial.hour);
-  const [cityId, setCityId] = useState(initial.cityId || cities[0]?.id || 'seoul');
+  const [placeText, setPlaceText] = useState(
+    initial.birthPlace?.trim() ||
+      cities.find((c) => c.id === initial.cityId)?.nameKo ||
+      BIRTH_CITIES[0]?.nameKo ||
+      '서울',
+  );
+
+  const resolvedPlace = resolveBirthPlaceText(placeText);
+  const tstOffset = computeTrueSolarOffsetMinutes(
+    resolvedPlace.longitude,
+    resolvedPlace.utcOffsetMinutes,
+  );
+  const listId = `compat-place-list-${initial.id ?? 'inline'}`;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +83,10 @@ function QuickInlineEditor({
       hour: Math.min(23, Math.max(0, hour)),
       minute: 0,
       unknownTime: false,
-      cityId,
+      cityId: resolvedPlace.cityId,
+      birthPlace: resolvedPlace.label,
+      birthLongitude: resolvedPlace.longitude,
+      birthUtcOffsetMinutes: resolvedPlace.utcOffsetMinutes,
     });
     onCancel();
   };
@@ -167,10 +189,13 @@ function QuickInlineEditor({
         />
       </div>
 
-      {cities.length > 0 && (
-        <select
-          value={cityId}
-          onChange={(e) => setCityId(e.target.value)}
+      <div className="space-y-1">
+        <input
+          type="text"
+          list={listId}
+          value={placeText}
+          onChange={(e) => setPlaceText(e.target.value)}
+          placeholder="태어난 지역 자유 입력 (예: 강릉, 부산 해운대, 도쿄)"
           aria-label="출생 지역"
           className="w-full rounded-lg px-2.5 py-1.5 outline-none"
           style={{
@@ -178,14 +203,28 @@ function QuickInlineEditor({
             border: '1px solid var(--border-subtle)',
             color: 'var(--text-primary)',
           }}
+        />
+        <datalist id={listId}>
+          {BIRTH_PLACE_CATALOG.filter((p) => p.kind !== 'province')
+            .slice(0, 60)
+            .map((p) => (
+              <option key={p.id} value={p.nameKo}>
+                {p.regionLabel}
+              </option>
+            ))}
+        </datalist>
+        <div
+          className="flex items-center justify-between text-[10px]"
+          style={{ color: 'var(--text-muted)' }}
         >
-          {cities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nameKo} ({c.country})
-            </option>
-          ))}
-        </select>
-      )}
+          <span>
+            {resolvedPlace.label} ({formatLongitudeKo(resolvedPlace.longitude)})
+          </span>
+          <span style={{ color: 'var(--accent-gold)' }}>
+            진태양시 {tstOffset >= 0 ? `+${tstOffset}` : tstOffset}분
+          </span>
+        </div>
+      </div>
 
       <div className="flex justify-end gap-1.5">
         <button

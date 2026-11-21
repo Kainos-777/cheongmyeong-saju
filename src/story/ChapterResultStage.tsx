@@ -12,6 +12,7 @@ import {
   HeartHandshake,
   Image as ImageIcon,
   LockOpen,
+  MapPin,
   RotateCcw,
   Share2,
   Sparkles,
@@ -26,7 +27,7 @@ import {
   FourPillarsBoard,
   OhaengBalancePanel,
 } from '../components';
-import { BIRTH_CITIES } from '../engine';
+import { BIRTH_CITIES, formatLongitudeKo } from '../engine';
 import {
   DaewoonTimelineMotion,
   KineticTypography,
@@ -157,16 +158,36 @@ export function ChapterResultStage({
     ? `${currentScript.headline}. ${chapterDialogueText}`
     : chapterDialogueText;
 
-  // Auto-speak chapter dialogue when voice is enabled; stop cleanly on chapter change/unmount
+  const chapterVoiceKey = useMemo(() => {
+    if (chapter === 0) return `ch0-${sajuResult.dayMaster.element}`;
+    if (chapter === 1) return 'ch1-pillars';
+    if (chapter === 2) return 'ch2-daewoon';
+    if (chapter === 3) return 'ch3-compat';
+    return 'ch4-share';
+  }, [chapter, sajuResult.dayMaster.element]);
+
+  const secretVoiceKey = `secret-${Math.min(3, chapter)}`;
+
+  // Auto-speak chapter dialogue with pre-rendered Supertone F5 voice; stop cleanly on change/unmount
   useEffect(() => {
     if (voiceEnabled) {
       setSpeakingTarget('chapter');
-      speakClipOrText({ text: chapterSpeechText });
+      speakClipOrText({
+        voiceKey: chapterVoiceKey,
+        text: chapterSpeechText,
+      });
     }
     return () => {
       stopVoice();
     };
-  }, [voiceEnabled, chapter, chapterSpeechText, speakClipOrText, stopVoice]);
+  }, [
+    voiceEnabled,
+    chapter,
+    chapterVoiceKey,
+    chapterSpeechText,
+    speakClipOrText,
+    stopVoice,
+  ]);
 
   const handleToggleChapterSpeak = () => {
     if (isSpeaking && speakingTarget === 'chapter') {
@@ -175,6 +196,7 @@ export function ChapterResultStage({
     }
     setSpeakingTarget('chapter');
     speakClipOrText({
+      voiceKey: chapterVoiceKey,
       text: chapterSpeechText,
       force: true,
     });
@@ -185,7 +207,10 @@ export function ChapterResultStage({
     playChime();
     if (voiceEnabled && currentScript.secretReveal) {
       setSpeakingTarget('secret');
-      speakClipOrText({ text: currentScript.secretReveal });
+      speakClipOrText({
+        voiceKey: `secret-${Math.min(3, targetChapter)}`,
+        text: currentScript.secretReveal,
+      });
     }
   };
 
@@ -196,6 +221,7 @@ export function ChapterResultStage({
     }
     setSpeakingTarget('secret');
     speakClipOrText({
+      voiceKey: secretVoiceKey,
       text: currentScript.secretReveal,
       force: true,
     });
@@ -668,6 +694,45 @@ export function ChapterResultStage({
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     {sajuResult.interpretation.coreSummary}
+                  </p>
+                </div>
+
+                {/* Birth Region Astronomy & Directional Note */}
+                <div
+                  aria-label="출생지 천문 반영 결과"
+                  className="mt-4 rounded-2xl border p-3.5 text-xs leading-relaxed"
+                  style={{
+                    backgroundColor: 'rgba(229, 190, 109, 0.06)',
+                    borderColor: 'rgba(229, 190, 109, 0.25)',
+                  }}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span
+                      className="inline-flex items-center gap-1.5 font-bold"
+                      style={{ color: 'var(--accent-gold)' }}
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      출생지 천문 반영 · {sajuResult.birthPlace.label}
+                    </span>
+                    <span
+                      className="font-mono text-[11px]"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      {formatLongitudeKo(sajuResult.birthPlace.longitude)} ·{' '}
+                      {sajuResult.input.useTrueSolarTime &&
+                      !sajuResult.input.unknownTime
+                        ? `진태양시 ${sajuResult.trueSolarTimeOffsetMin >= 0 ? `+${sajuResult.trueSolarTimeOffsetMin}` : sajuResult.trueSolarTimeOffsetMin}분 → ${sajuResult.adjustedTimeStr}`
+                        : `보정 OFF (${sajuResult.adjustedTimeStr})`}
+                    </span>
+                  </div>
+                  <p
+                    className="mt-1.5 text-[11px] sm:text-xs"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    <strong style={{ color: 'var(--accent-gold)' }}>
+                      {sajuResult.birthPlace.regionDirectionKo}
+                    </strong>{' '}
+                    — {sajuResult.birthPlace.regionNote}
                   </p>
                 </div>
 

@@ -5,7 +5,7 @@ import {
   FortuneInsightCards,
   FourPillarsBoard,
 } from '../components';
-import { BIRTH_CITIES, ELEMENT_META } from '../engine';
+import { ELEMENT_META } from '../engine';
 import {
   KineticTypography,
   PillarRevealCard,
@@ -25,8 +25,7 @@ export function PillarsPage() {
   const { tokens, updateTokens } = useDesignerStudio();
   const motionSettings = useMotionSettings();
 
-  const cityName =
-    BIRTH_CITIES.find((c) => c.id === sajuResult.input.cityId)?.nameKo ?? '서울';
+  const cityName = sajuResult.birthPlace.label;
   const dmMeta = ELEMENT_META[sajuResult.dayMaster.element];
   const yongshinMeta = ELEMENT_META[sajuResult.yongshin.primary];
   const iljuName = `${sajuResult.pillars.day.stem.hangul}${sajuResult.pillars.day.branch.hangul}일주`;
